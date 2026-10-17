@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Vikingos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Vikingos (referencias)</h1><p>Cada sabor con su receta, costo, precio y existencias</p></div>
+  {% if puede('admin') %}<a class="btn" href="{{ url_for('producto_form') }}">＋ Nueva referencia</a>{% endif %}
+</div>
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Referencia</th><th class="num">En stock</th><th class="num">Costo real c/u</th><th class="num">Precio venta</th><th class="num">Ganancia c/u</th><th class="num">Puedo hacer</th><th></th></tr></thead>
+    <tbody>
+    {% for p in items %}
+      {% set cap, lim = p.capacidad %}
+      <tr>
+        <td><a href="{{ url_for('producto_detalle', id=p.id) }}"><b>{{ p.nombre }}</b></a>{% if p.descripcion %}<br><small>{{ p.descripcion }}</small>{% endif %}</td>
+        <td class="num">{{ p.stock|num }} {% if p.bajo_minimo %}<span class="badge warn">bajo</span>{% endif %}</td>
+        <td class="num">{% if p.costo_promedio %}{{ p.costo_promedio|cop }}{% else %}<small>Receta: {{ p.costo_receta|cop }}</small>{% endif %}</td>
+        <td class="num">{{ p.precio_venta|cop }}</td>
+        {% set g = p.precio_venta - (p.costo_promedio or p.costo_receta) %}
+        <td class="num {{ 'pos' if g >= 0 else 'neg' }}">{{ g|cop }}</td>
+        <td class="num">{% if cap is none %}<span class="badge gray">Sin receta</span>{% else %}{{ cap|num }}{% endif %}</td>
+        <td class="r"><a class="btn sec sm" href="{{ url_for('produccion_nueva', producto=p.id) }}">Producir</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">Aún no hay referencias. Crea la primera, por ejemplo «Vikingo de fresa en leche».</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint" style="margin-top:10px"><b>Costo real</b> = promedio de lo que costó producir cada vikingo (insumos + mano de obra + indirectos). Si aún no has producido, se muestra el costo de la receta (solo insumos).</p>
+</div>
+{% endblock %}

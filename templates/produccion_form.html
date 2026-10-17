@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Registrar producción{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Registrar producción</h1>
+  <p>Transforma insumos en vikingos: lo que usaste + mano de obra + costos indirectos = costo real de cada vikingo.</p></div></div>
+{% if not productos %}
+  <div class="note warn">Primero crea una referencia de vikingo con su receta. <a href="{{ url_for('producto_form') }}">Crear referencia</a></div>
+{% else %}
+<form method="post" id="f">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid g-main">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>1. ¿Qué produjiste?</h2></div>
+        <div class="form-row wide-first">
+          <div class="field"><label>Referencia</label><select class="input" name="producto_id" id="prod" required>
+            <option value="">— Elegir —</option>
+            {% for p in productos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}
+          </select></div>
+          <div class="field"><label>Vikingos obtenidos</label><input class="input" type="number" min="1" step="1" name="cantidad" id="cant" required placeholder="Ej: 100"></div>
+          <div class="field"><label>Fecha</label><input class="input" type="date" name="fecha" id="fecha" value="{{ hoy }}"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>2. Insumos utilizados</h2><button type="button" class="btn sec sm" id="fromRecipe">↻ Calcular según receta</button></div>
+        <p class="hint" id="recipeNote" style="margin:-4px 0 10px">Se llenan solos con la receta × cantidad. Si usaste más o menos (merma, sobrante), ajústalos.</p>
+        <div class="table-wrap"><table class="lines">
+          <thead><tr><th>Insumo</th><th class="num">Cantidad usada</th><th>Unidad</th><th class="num">En bodega</th><th class="num">Costo</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <button type="button" class="btn sec sm" id="add" style="margin-top:10px">＋ Agregar otro insumo</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>3. Mano de obra</h2></div>
+        <div class="form-row">
+          <div class="field"><label>¿Cómo se paga?</label><select class="input" name="mo_tipo" id="moTipo">
+            {% for k, v in tipos_mo.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select></div>
+          <div class="field" id="moValorBox"><label id="moLbl">Valor</label><input class="input" type="number" step="any" min="0" name="mo_valor" id="moValor"><div class="hint" id="moHint"></div></div>
+          <div class="field" id="moRespBox"><label>¿Quién lo hizo?</label><input class="input" name="mo_responsable" id="moResp" placeholder="Opcional"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>4. Costos indirectos de este lote</h2></div>
+        <div class="form-row c4">
+          <div class="field"><label>Energía / congelación</label><input class="input ind" type="number" step="any" min="0" name="costo_energia" id="cEn" placeholder="0"></div>
+          <div class="field"><label>Gas / agua</label><input class="input ind" type="number" step="any" min="0" name="costo_gas_agua" id="cGa" placeholder="0"></div>
+          <div class="field"><label>Transporte / domicilios</label><input class="input ind" type="number" step="any" min="0" name="costo_transporte" id="cTr" placeholder="0"></div>
+          <div class="field"><label>Otros</label><input class="input ind" type="number" step="any" min="0" name="costo_otros" id="cOt" placeholder="0"></div>
+        </div>
+        <div class="field" id="otrosBox" style="display:none"><label>¿Qué son los «otros»?</label><input class="input" name="otros_descripcion" id="otrosDesc" placeholder="Ej: hielo, empaque para domicilio, arriendo del congelador"></div>
+        <div class="field"><label>Nota</label><input class="input" name="nota" id="nota" placeholder="Opcional"></div>
+      </div>
+    </div>
+
+    <div class="card summary">
+      <h2>Resultado del lote</h2>
+      <div class="flow" style="margin:14px 0">
+        <div class="box"><small>Costo total</small><div style="font-weight:800" id="sTot">$ 0</div></div>
+        <div class="arrow">→</div>
+        <div class="box"><small>Vikingos</small><div style="font-weight:800" id="sCant">0</div></div>
+      </div>
+      <div class="sum-line"><span>Insumos</span><b id="sIns">$ 0</b></div>
+      <div class="sum-line"><span>Mano de obra</span><b id="sMo">$ 0</b></div>
+      <div class="sum-line"><span>Indirectos</span><b id="sInd">$ 0</b></div>
+      <div class="sum-total"><span>Costo por vikingo</span><span id="sUnit">$ 0</span></div>
+      <div class="sum-line"><span>Precio de venta</span><b id="sPv">$ 0</b></div>
+      <div class="sum-line"><span>Ganancia por vikingo</span><b id="sGu">$ 0</b></div>
+      <div class="sum-line"><span>Ganancia si vendes todo</span><b id="sGt">$ 0</b></div>
+      <div id="stockWarn" class="note warn" style="display:none;margin-top:10px"></div>
+      <button class="btn block" style="margin-top:14px">Registrar producción</button>
+      <a class="btn sec block" style="margin-top:8px" href="{{ url_for('producciones') }}">Cancelar</a>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const PRODS = {{ productos|tojson }};
+const INS = {{ insumos|tojson }};
+const PRE = {{ prefill|tojson }};
+const PRESEL = {{ preseleccion|tojson }};
+const $ = id => document.getElementById(id);
+if ($('rows')) {
+  const rows = $('rows');
+  const ins = id => INS.find(i => i.id == id);
+  const prod = () => PRODS.find(p => p.id == $('prod').value);
+  let editado = false;
+
+  function opts(sel) {
+    return '<option value="">— Elegir —</option>' + INS.map(i =>
+      `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join('');
+  }
+  function addRow(sel = '', cant = '') {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="min-width:190px"><select class="input" name="consumo_insumo[]">${opts(sel)}</select></td>
+      <td><input class="input r" type="number" step="any" min="0" name="consumo_cantidad[]" value="${cant}" style="min-width:90px"></td>
+      <td class="un muted"></td><td class="num st"></td><td class="num co">—</td>
+      <td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+    tr.querySelector('.btn-icon').onclick = () => { tr.remove(); editado = true; calc(); };
+    tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', () => { editado = true; calc(); }));
+    rows.appendChild(tr);
+  }
+  function desdeReceta() {
+    rows.innerHTML = '';
+    const p = prod(), q = val($('cant'));
+    if (p && p.receta.length) {
+      p.receta.forEach(r => addRow(r.insumo_id, q > 0 ? +(r.cantidad * q).toFixed(4) : ''));
+      $('recipeNote').textContent = 'Calculado con la receta × ' + (q || 0) + ' vikingos. Ajusta si usaste más o menos (merma, sobrante).';
+    } else {
+      addRow();
+      $('recipeNote').textContent = p ? 'Esta referencia no tiene receta: agrega a mano los insumos que usaste.' : 'Elige la referencia y la cantidad.';
+    }
+    editado = false; calc();
+  }
+  function onChangeBase() {
+    if (!editado) desdeReceta();
+    else { $('recipeNote').innerHTML = '<b>Cambiaste la cantidad o referencia.</b> Pulsa «Calcular según receta» para actualizar los insumos.'; calc(); }
+  }
+  function moUi() {
+    const t = $('moTipo').value;
+    $('moValorBox').style.display = $('moRespBox').style.display = t === 'ninguna' ? 'none' : '';
+    $('moLbl').textContent = t === 'unidad' ? 'Valor por vikingo ($)' : 'Valor de la jornada o lote ($)';
+  }
+  function calc() {
+    let cIns = 0; const avisos = [], uso = {};
+    rows.querySelectorAll('tr').forEach(tr => {
+      const i = ins(tr.querySelector('select').value), q = val(tr.querySelector('input'));
+      tr.querySelector('.un').textContent = i ? i.unidad : '';
+      tr.querySelector('.st').textContent = i ? NUM(i.stock, 2) : '';
+      tr.querySelector('.co').textContent = i ? COP(q * i.costo) : '—';
+      if (i) { cIns += q * i.costo; uso[i.id] = (uso[i.id] || 0) + q; }
+    });
+    for (const id in uso) { const i = ins(id); if (uso[id] > i.stock + 1e-9) avisos.push(`${i.nombre}: necesitas ${NUM(uso[id], 3)} y hay ${NUM(i.stock, 3)} ${i.unidad}`); }
+    const q = val($('cant')), t = $('moTipo').value, mv = val($('moValor'));
+    const cMo = t === 'unidad' ? mv * q : t === 'jornada' ? mv : 0;
+    const cInd = [...document.querySelectorAll('.ind')].reduce((s, e) => s + val(e), 0);
+    const tot = cIns + cMo + cInd, unit = q > 0 ? tot / q : 0, p = prod(), pv = p ? p.precio : 0;
+    $('moHint').textContent = t === 'unidad' && q ? `${q} × ${COP(mv)} = ${COP(cMo)}` : (t === 'jornada' && q ? `Equivale a ${COP(cMo / q)} por vikingo` : '');
+    $('sIns').textContent = COP(cIns); $('sMo').textContent = COP(cMo); $('sInd').textContent = COP(cInd);
+    $('sTot').textContent = COP(tot); $('sCant').textContent = NUM(q, 0); $('sUnit').textContent = COP(unit);
+    $('sPv').textContent = COP(pv);
+    const gu = pv - unit; $('sGu').textContent = q ? COP(gu) : '—'; $('sGu').className = gu >= 0 ? 'pos' : 'neg';
+    const gt = pv * q - tot; $('sGt').textContent = q ? COP(gt) : '—'; $('sGt').className = gt >= 0 ? 'pos' : 'neg';
+    $('otrosBox').style.display = val($('cOt')) > 0 ? '' : 'none';
+    $('otrosDesc').required = val($('cOt')) > 0;
+    $('stockWarn').style.display = avisos.length ? '' : 'none';
+    $('stockWarn').innerHTML = '<b>No alcanza el inventario:</b><br>' + avisos.join('<br>');
+  }
+
+  $('prod').addEventListener('change', onChangeBase);
+  $('cant').addEventListener('input', onChangeBase);
+  $('fromRecipe').onclick = desdeReceta;
+  $('add').onclick = () => { addRow(); editado = true; calc(); };
+  $('moTipo').addEventListener('change', () => { moUi(); calc(); });
+  ['moValor', 'cEn', 'cGa', 'cTr', 'cOt'].forEach(id => $(id).addEventListener('input', calc));
+
+  if (PRE) {
+    const map = { producto_id: 'prod', cantidad: 'cant', fecha: 'fecha', mo_tipo: 'moTipo', mo_valor: 'moValor',
+      mo_responsable: 'moResp', costo_energia: 'cEn', costo_gas_agua: 'cGa', costo_transporte: 'cTr',
+      costo_otros: 'cOt', otros_descripcion: 'otrosDesc', nota: 'nota' };
+    for (const k in map) if (PRE[k] !== undefined && PRE[k] !== '') $(map[k]).value = PRE[k];
+    (PRE.consumos.length ? PRE.consumos : [{ insumo_id: '', cantidad: '' }]).forEach(c => addRow(c.insumo_id, c.cantidad));
+    editado = true; moUi(); calc();
+  } else {
+    if (PRESEL) $('prod').value = PRESEL;
+    moUi(); desdeReceta();
+  }
+}
+</script>
+{% endblock %}

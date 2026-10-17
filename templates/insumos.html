@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Insumos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Insumos</h1><p>Materia prima en bodega, valorizada a costo promedio</p></div>
+  <div class="actions">
+    <a class="btn sec" href="{{ url_for('compra_nueva') }}">⇣ Registrar compra</a>
+    <a class="btn" href="{{ url_for('insumo_form') }}">＋ Nuevo insumo</a>
+  </div>
+</div>
+<div class="card">
+  <div class="card-head">
+    <form class="filters" method="get"><input class="input" name="q" value="{{ q }}" placeholder="Buscar insumo…" style="min-width:0;flex:1 1 200px"><button class="btn sec sm">Buscar</button></form>
+    <span class="badge">Valor total: {{ total|cop }}</span>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Insumo</th><th class="num">Stock</th><th>Unidad</th><th class="num">Costo prom.</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+    {% for i in items %}
+      <tr>
+        <td><b>{{ i.nombre }}</b></td>
+        <td class="num">{{ i.stock|num(3) }}</td>
+        <td>{{ i.unidad }}</td>
+        <td class="num">{{ i.costo_promedio|cop }}</td>
+        <td class="num">{{ i.valor_stock|cop }}</td>
+        <td>{% if i.stock <= 0 %}<span class="badge err">Agotado</span>{% elif i.bajo_minimo %}<span class="badge warn">Bajo mínimo</span>{% else %}<span class="badge ok">OK</span>{% endif %}</td>
+        <td class="r">
+          <a class="btn sec sm" href="{{ url_for('insumo_form', id=i.id) }}">Editar</a>
+          {% if puede('admin') %}
+          <form method="post" action="{{ url_for('insumo_eliminar', id=i.id) }}" style="display:inline" onsubmit="return confirm('¿Eliminar {{ i.nombre }}?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn-icon" title="Eliminar">✕</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">No hay insumos. Crea el primero: bolsas, leche, azúcar, saborizantes…</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

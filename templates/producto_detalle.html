@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ prod.nombre }}{% endblock %}
+{% block content %}
+{% set cap, lim = prod.capacidad %}
+<div class="page-head">
+  <div><h1>{{ prod.nombre }}</h1><p>{{ prod.descripcion or 'Referencia de vikingo' }}</p></div>
+  <div class="actions">
+    {% if puede('admin') %}<a class="btn sec" href="{{ url_for('producto_form', id=prod.id) }}">Editar receta y precio</a>{% endif %}
+    <a class="btn" href="{{ url_for('produccion_nueva', producto=prod.id) }}">⚙ Producir</a>
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="lbl">En stock</div><div class="val">{{ prod.stock|num }}</div><div class="sub">vikingos listos para vender</div></div>
+  <div class="kpi"><div class="lbl">Costo real c/u</div><div class="val">{{ prod.costo_promedio|cop }}</div><div class="sub">Receta (solo insumos): {{ prod.costo_receta|cop }}</div></div>
+  <div class="kpi"><div class="lbl">Precio de venta</div><div class="val">{{ prod.precio_venta|cop }}</div>
+    {% set g = prod.precio_venta - (prod.costo_promedio or prod.costo_receta) %}
+    <div class="sub">Ganancia c/u <b class="{{ 'pos' if g >= 0 else 'neg' }}">{{ g|cop }}</b>{% if prod.precio_venta %} · {{ (g / prod.precio_venta * 100)|num(1) }}%{% endif %}</div></div>
+  <div class="kpi hl"><div class="lbl">Puedo hacer hoy</div><div class="val">{{ cap|num if cap is not none else '—' }}</div>
+    <div class="sub">{{ ('Limita: ' ~ lim.nombre) if lim else 'Define la receta' }}</div></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <div class="card-head"><h2>Receta por 1 vikingo</h2></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th class="num">Costo</th><th class="num">En bodega</th><th class="num">Alcanza para</th></tr></thead>
+      <tbody>
+      {% for r in prod.receta %}
+        <tr {% if lim and r.insumo_id == lim.id %}style="background:var(--warn-soft)"{% endif %}>
+          <td>{{ r.insumo.nombre }}</td>
+          <td class="num">{{ r.cantidad|num(4) }} {{ r.insumo.unidad }}</td>
+          <td class="num">{{ (r.cantidad * r.insumo.costo_promedio)|cop }}</td>
+          <td class="num">{{ r.insumo.stock|num(2) }}</td>
+          <td class="num">{{ ((r.insumo.stock if r.insumo.stock > 0 else 0) // r.cantidad)|int|num }}</td>
+        </tr>
+      {% else %}<tr><td colspan="5" class="empty">Sin receta. Edita la referencia para agregarla.</td></tr>{% endfor %}
+      </tbody>
+      {% if prod.receta %}<tfoot><tr><td colspan="2">Costo insumos</td><td class="num">{{ prod.costo_receta|cop }}</td><td colspan="2"></td></tr></tfoot>{% endif %}
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Últimas producciones</h2><span class="badge berry">Vendidos histórico: {{ vendidos|num }}</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th class="num">Vikingos</th><th class="num">Costo total</th><th class="num">C/u</th></tr></thead>
+      <tbody>
+      {% for p in prods %}
+        <tr><td><a href="{{ url_for('produccion_detalle', id=p.id) }}">{{ p.fecha|fecha }}</a></td><td class="num">{{ p.cantidad|num }}</td><td class="num">{{ p.costo_total|cop }}</td><td class="num">{{ p.costo_unitario|cop }}</td></tr>
+      {% else %}<tr><td colspan="4" class="empty">Aún no se ha producido esta referencia.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+    {% if puede('admin') %}<p class="hint" style="margin-top:10px">Ganancia acumulada con esta referencia: <b>{{ ganancia_hist|cop }}</b></p>{% endif %}
+  </div>
+</div>
+{% endblock %}

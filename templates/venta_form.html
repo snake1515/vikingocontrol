@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Nueva venta{% endblock %}
+{% block content %}
+<style>
+  .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .chip { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); position: relative; }
+  .chip:hover { border-color: var(--accent); }
+  .chip b { display: block; }
+  .chip small { color: var(--muted); }
+  .chip .qty { position: absolute; top: -8px; right: -6px; background: var(--berry); color: #fff; border-radius: 99px; font-size: .75rem; font-weight: 800; padding: 1px 8px; display: none; }
+  .chip.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .chip.sel .qty { display: block; }
+  .chip[disabled] { opacity: .45; cursor: not-allowed; }
+</style>
+<div class="page-head"><div><h1>Nueva venta</h1><p>Toca un vikingo para sumarlo. Puedes ajustar cantidad y precio abajo.</p></div></div>
+{% if not productos %}<div class="note warn">No hay referencias de vikingos creadas.</div>{% else %}
+<form method="post" id="f">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid g-main">
+    <div>
+      <div class="card">
+        <div class="chips" id="chips">
+          {% for p in productos %}
+          <button type="button" class="chip" data-id="{{ p.id }}" {{ 'disabled' if p.stock <= 0 }}>
+            <span class="qty">0</span><b>{{ p.nombre }}</b><small>{{ p.precio|cop }} · {{ p.stock }} disp.</small>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Detalle</h2></div>
+        <div class="table-wrap"><table class="lines">
+          <thead><tr><th>Vikingo</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Subtotal</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <p class="empty" id="vacio">Aún no has agregado vikingos.</p>
+      </div>
+    </div>
+    <div class="card summary">
+      <h2>Total</h2>
+      <div class="big-num" id="tot">$ 0</div>
+      <p class="hint" id="und">0 vikingos</p>
+      <div class="field"><label>Cliente</label><input class="input" name="cliente" placeholder="Opcional" value="{{ request.form.cliente }}"></div>
+      <div class="form-row">
+        <div class="field"><label>Pago</label><select class="input" name="metodo_pago">{% for m in metodos %}<option {{ 'selected' if request.form.metodo_pago == m }}>{{ m }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Fecha</label><input class="input" type="date" name="fecha" value="{{ request.form.fecha or hoy }}"></div>
+      </div>
+      <div class="field"><label>Nota</label><input class="input" name="nota" placeholder="Opcional" value="{{ request.form.nota }}"></div>
+      <div id="warn" class="note warn" style="display:none;margin-bottom:10px"></div>
+      <button class="btn block" id="go">Registrar venta</button>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const PRODS = {{ productos|tojson }};
+const rows = document.getElementById('rows');
+if (rows) {
+  const prod = id => PRODS.find(p => p.id == id);
+  function rowFor(id) { return rows.querySelector(`tr[data-id="${id}"]`); }
+  function add(id, q = 1, precio = null) {
+    let tr = rowFor(id);
+    if (tr) { const i = tr.querySelector('.q'); i.value = val(i) + q; return calc(); }
+    const p = prod(id);
+    tr = document.createElement('tr'); tr.dataset.id = id;
+    tr.innerHTML = `<td><b>${p.nombre}</b><input type="hidden" name="producto_id[]" value="${id}"><br><small class="muted">${p.stock} disponibles</small></td>
+      <td><input class="input r q" type="number" min="1" step="1" name="cantidad[]" value="${q}" style="width:80px"></td>
+      <td><input class="input r pr" type="number" min="0" step="any" name="precio[]" value="${precio ?? p.precio}" style="width:100px"></td>
+      <td class="num st"></td><td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+    tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
+    tr.querySelectorAll('input').forEach(e => e.addEventListener('input', calc));
+    rows.appendChild(tr); calc();
+  }
+  function calc() {
+    let t = 0, u = 0; const w = [];
+    document.querySelectorAll('.chip').forEach(c => { c.classList.remove('sel'); c.querySelector('.qty').textContent = 0; });
+    rows.querySelectorAll('tr').forEach(tr => {
+      const p = prod(tr.dataset.id), q = val(tr.querySelector('.q')), pr = val(tr.querySelector('.pr'));
+      tr.querySelector('.st').textContent = COP(q * pr); t += q * pr; u += q;
+      if (q > p.stock) w.push(`${p.nombre}: solo hay ${p.stock}`);
+      const chip = document.querySelector(`.chip[data-id="${p.id}"]`);
+      chip.classList.add('sel'); chip.querySelector('.qty').textContent = q;
+    });
+    document.getElementById('tot').textContent = COP(t);
+    document.getElementById('und').textContent = NUM(u, 0) + (u === 1 ? ' vikingo' : ' vikingos');
+    document.getElementById('vacio').style.display = rows.children.length ? 'none' : '';
+    const wEl = document.getElementById('warn');
+    wEl.style.display = w.length ? '' : 'none'; wEl.innerHTML = w.join('<br>');
+    document.getElementById('go').disabled = !rows.children.length || w.length > 0;
+  }
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => add(c.dataset.id));
+  calc();
+}
+</script>
+{% endblock %}

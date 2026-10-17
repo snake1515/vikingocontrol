@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingresar · {{ NOMBRE_NEGOCIO }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="brand"><span class="brand-mark"></span><div><b>{{ NOMBRE_NEGOCIO }}</b><small>Producción y ventas de vikingos</small></div></div>
+    <div class="card">
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+      {% endwith %}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field"><label for="u">Usuario</label><input class="input" id="u" name="username" autocomplete="username" required autofocus></div>
+        <div class="field"><label for="p">Contraseña</label><input class="input" id="p" type="password" name="password" autocomplete="current-password" required></div>
+        <div class="field"><label class="check"><input type="checkbox" name="recordar" value="1"> Mantener sesión iniciada</label></div>
+        <button class="btn block">Ingresar</button>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if prod else 'Nueva' }} referencia{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'Editar ' ~ prod.nombre if prod else 'Nueva referencia de vikingo' }}</h1>
+  <p>La receta dice cuánto de cada insumo lleva <b>un</b> vikingo. Con ella se calcula el consumo, el costo y cuántos puedes hacer.</p></div></div>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid g-main">
+    <div>
+      <div class="card">
+        <div class="form-row">
+          <div class="field"><label>Nombre</label><input class="input" name="nombre" value="{{ request.form.nombre or (prod.nombre if prod) }}" placeholder="Ej: Vikingo de fresa en leche" required></div>
+          <div class="field"><label>Precio de venta ($)</label><input class="input" type="number" step="any" min="0" name="precio_venta" id="precio" value="{{ request.form.precio_venta or ('%g'|format(prod.precio_venta) if prod else '') }}" required></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>Descripción</label><input class="input" name="descripcion" value="{{ request.form.descripcion or (prod.descripcion or '' if prod) }}" placeholder="Opcional"></div>
+          <div class="field"><label>Stock mínimo (alerta)</label><input class="input" type="number" step="1" min="0" name="stock_minimo" value="{{ request.form.stock_minimo or (prod.stock_minimo if prod else '') }}"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Receta por 1 vikingo</h2></div>
+        {% if not insumos %}<div class="note warn">Primero crea tus insumos. <a href="{{ url_for('insumo_form') }}">Crear insumo</a></div>{% endif %}
+        <div class="table-wrap"><table class="lines">
+          <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Costo</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <button type="button" class="btn sec sm" id="add" style="margin-top:10px">＋ Agregar insumo</button>
+        <p class="hint" style="margin-top:12px">Ejemplo: 1 bolsa · 0,08 litros de leche · 0,015 kg de azúcar · 0,03 kg de pulpa.
+          Tip: si de 1 litro te salen 12 vikingos, la leche por vikingo es 1 ÷ 12 = 0,083.</p>
+      </div>
+    </div>
+    <div class="card summary">
+      <h2>Costo estimado por vikingo</h2>
+      <p class="hint">Solo insumos, con el costo promedio actual</p>
+      <div class="big-num" id="costo">$ 0</div>
+      <div class="sum-line"><span>Precio de venta</span><b id="pv">$ 0</b></div>
+      <div class="sum-line"><span>Ganancia bruta c/u</span><b id="gan">$ 0</b></div>
+      <div class="sum-line"><span>Margen</span><b id="mar">0%</b></div>
+      <p class="hint">A esto se le suma mano de obra e indirectos cuando registras cada producción.</p>
+      <button class="btn block" style="margin-top:12px">Guardar referencia</button>
+      <a class="btn sec block" style="margin-top:8px" href="{{ url_for('producto_detalle', id=prod.id) if prod else url_for('productos') }}">Cancelar</a>
+    </div>
+  </div>
+</form>
+{% if prod %}
+<form method="post" action="{{ url_for('producto_eliminar', id=prod.id) }}" style="margin-top:20px" onsubmit="return confirm('¿Eliminar esta referencia? Su historial se conserva.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Eliminar referencia</button>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const INS = {{ insumos|tojson }};
+const RECETA = {{ receta|tojson }};
+const rows = document.getElementById('rows');
+const byId = id => INS.find(i => i.id == id);
+function opts(sel) {
+  return '<option value="">— Elegir —</option>' + INS.map(i =>
+    `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join('');
+}
+function addRow(sel = '', cant = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td style="min-width:200px"><select class="input" name="receta_insumo[]">${opts(sel)}</select></td>
+    <td><input class="input r" type="number" step="any" min="0" name="receta_cantidad[]" value="${cant}" style="min-width:90px"></td>
+    <td class="un muted"></td><td class="num co">—</td>
+    <td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+  tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
+  tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', calc));
+  rows.appendChild(tr); calc();
+}
+function calc() {
+  let t = 0;
+  rows.querySelectorAll('tr').forEach(tr => {
+    const ins = byId(tr.querySelector('select').value), q = val(tr.querySelector('input'));
+    tr.querySelector('.un').textContent = ins ? ins.unidad : '';
+    const c = ins ? q * ins.costo : 0; t += c;
+    tr.querySelector('.co').textContent = ins ? COP(c) : '—';
+  });
+  const pv = val(document.getElementById('precio'));
+  document.getElementById('costo').textContent = COP(t);
+  document.getElementById('pv').textContent = COP(pv);
+  const g = pv - t, gEl = document.getElementById('gan');
+  gEl.textContent = COP(g); gEl.className = g >= 0 ? 'pos' : 'neg';
+  document.getElementById('mar').textContent = pv ? NUM(g / pv * 100, 1) + '%' : '—';
+}
+document.getElementById('precio').addEventListener('input', calc);
+document.getElementById('add').onclick = () => addRow();
+if (RECETA.length) RECETA.forEach(r => addRow(r.insumo_id, r.cantidad)); else addRow();
+</script>
+{% endblock %}

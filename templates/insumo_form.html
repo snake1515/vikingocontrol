@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if ins else 'Nuevo' }} insumo{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'Editar insumo' if ins else 'Nuevo insumo' }}</h1>
+  <p>{{ 'El stock y el costo cambian con compras y producción.' if ins else 'Ej: bolsas para vikingo, leche, azúcar, pulpa de fresa.' }}</p></div></div>
+<div class="card" style="max-width:640px">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+      <div class="field"><label>Nombre</label><input class="input" name="nombre" value="{{ request.form.nombre or (ins.nombre if ins) }}" required></div>
+      <div class="field"><label>Unidad de medida</label>
+        <select class="input" name="unidad">
+          {% set sel = request.form.unidad or (ins.unidad if ins else 'unidad') %}
+          {% for u in unidades %}<option {{ 'selected' if u == sel }}>{{ u }}</option>{% endfor %}
+        </select>
+        <div class="hint">Así lo vas a medir en la receta (ej: litro, kilogramo).</div>
+      </div>
+    </div>
+    <div class="field" style="max-width:260px"><label>Stock mínimo (alerta)</label>
+      <input class="input" type="number" step="any" min="0" name="stock_minimo" value="{{ request.form.stock_minimo or ('%g'|format(ins.stock_minimo) if ins else '') }}">
+    </div>
+    {% if not ins %}
+    <div class="note" style="margin-bottom:14px"><b>Inventario inicial (opcional).</b> Si ya tienes este insumo en bodega, escribe la cantidad y lo que te costó en total.</div>
+    <div class="form-row">
+      <div class="field"><label>Cantidad que tienes</label><input class="input" type="number" step="any" min="0" name="cantidad_inicial" value="{{ request.form.cantidad_inicial }}"></div>
+      <div class="field"><label>Costo total ($)</label><input class="input" type="number" step="any" min="0" name="costo_inicial" value="{{ request.form.costo_inicial }}"></div>
+    </div>
+    {% else %}
+    <div class="note" style="margin-bottom:14px">Stock actual: <b>{{ ins.stock|num(3) }} {{ ins.unidad }}</b> · Costo promedio: <b>{{ ins.costo_promedio|cop }}</b> por {{ ins.unidad }}</div>
+    {% endif %}
+    <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('insumos') }}">Cancelar</a></div>
+  </form>
+</div>
+{% endblock %}

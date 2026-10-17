@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Producción #{{ p.id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Producción #{{ p.id }} · {{ p.producto.nombre }}</h1>
+    <p>{{ p.fecha|fecha(True) }}{% if p.usuario %} · registró {{ p.usuario.nombre }}{% endif %}</p></div>
+  <div class="actions"><a class="btn sec" href="{{ url_for('producciones') }}">← Volver</a>
+    <a class="btn" href="{{ url_for('produccion_nueva', producto=p.producto_id) }}">Producir otra vez</a></div>
+</div>
+
+<div class="card">
+  <div class="flow">
+    <div class="box">
+      <small>Entró</small>
+      {% for c in p.consumos %}<div><b>{{ c.cantidad|num(3) }}</b> {{ c.insumo.unidad }} de {{ c.insumo.nombre }}</div>{% endfor %}
+      {% if p.costo_mano_obra %}<div>+ mano de obra</div>{% endif %}
+      {% if p.costo_indirectos %}<div>+ costos indirectos</div>{% endif %}
+    </div>
+    <div class="arrow">→</div>
+    <div class="box"><small>Salió</small><div class="big-num">{{ p.cantidad|num }}</div><div>vikingos de {{ p.producto.nombre }}</div>
+      <div style="margin-top:6px"><span class="badge">{{ p.costo_unitario|cop }} c/u</span></div></div>
+  </div>
+  {% if teorico is not none %}
+    {% set dif = p.cantidad - teorico %}
+    <div class="note {{ 'warn' if dif < -0.5 else '' }}" style="margin-top:14px">
+      Según la receta actual, con esos insumos debían salir <b>{{ teorico|num(1) }}</b> vikingos (limita {{ limitante.nombre }}).
+      {% if dif < -0.5 %}Salieron <b>{{ (-dif)|num(1) }} menos</b>: merma de {{ ((-dif) / teorico * 100)|num(1) }}%.
+      {% elif dif > 0.5 %}Salieron <b>{{ dif|num(1) }} más</b> de lo esperado: revisa si la receta está sobredimensionada.
+      {% else %}El rendimiento fue el esperado. ✔{% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="grid g2" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><h2>Insumos consumidos</h2></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th class="num">Costo unit.</th><th class="num">Total</th></tr></thead>
+      <tbody>{% for c in p.consumos %}
+        <tr><td>{{ c.insumo.nombre }}</td><td class="num">{{ c.cantidad|num(3) }} {{ c.insumo.unidad }}</td><td class="num">{{ c.costo_unitario|cop }}</td><td class="num">{{ c.costo_total|cop }}</td></tr>
+      {% endfor %}</tbody>
+      <tfoot><tr><td colspan="3">Total insumos</td><td class="num">{{ p.costo_insumos|cop }}</td></tr></tfoot>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Costo del lote</h2></div>
+    <div class="sum-line"><span>Insumos</span><b>{{ p.costo_insumos|cop }}</b></div>
+    <div class="sum-line"><span>Mano de obra<br><small>{{ tipos_mo[p.mo_tipo] }}{% if p.mo_tipo == 'unidad' %}: {{ p.cantidad }} × {{ p.mo_valor|cop }}{% endif %}{% if p.mo_responsable %} · {{ p.mo_responsable }}{% endif %}</small></span><b>{{ p.costo_mano_obra|cop }}</b></div>
+    <div class="sum-line"><span>Energía / congelación</span><b>{{ p.costo_energia|cop }}</b></div>
+    <div class="sum-line"><span>Gas / agua</span><b>{{ p.costo_gas_agua|cop }}</b></div>
+    <div class="sum-line"><span>Transporte / domicilios</span><b>{{ p.costo_transporte|cop }}</b></div>
+    <div class="sum-line"><span>Otros{% if p.otros_descripcion %}<br><small>{{ p.otros_descripcion }}</small>{% endif %}</span><b>{{ p.costo_otros|cop }}</b></div>
+    <div class="sum-total"><span>Total</span><span>{{ p.costo_total|cop }}</span></div>
+    <div class="sum-line"><span>Costo por vikingo</span><b>{{ p.costo_unitario|cop }}</b></div>
+    {% set pv = p.producto.precio_venta %}
+    <div class="sum-line"><span>Ganancia esperada c/u (precio {{ pv|cop }})</span><b class="{{ 'pos' if pv >= p.costo_unitario else 'neg' }}">{{ (pv - p.costo_unitario)|cop }}</b></div>
+    {% if p.nota %}<p class="hint">Nota: {{ p.nota }}</p>{% endif %}
+  </div>
+</div>
+{% endblock %}
