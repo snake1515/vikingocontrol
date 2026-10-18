@@ -13,6 +13,7 @@ from flask_login import (LoginManager, current_user, login_required,
 from sqlalchemy import func
 
 from models import (METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, CompraInsumo,
+                    Configuracion,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
                     VentaItem, ahora, db)
 from services import (ErrorNegocio, anular_venta, registrar_compra,
@@ -275,6 +276,65 @@ def inicio():
         alertas_productos=[p for p in productos if p.bajo_minimo],
         productos=productos,
     )
+
+
+# ------------------------------------------------------------ distribución
+@app.route("/distribucion")
+@rol_requerido("admin")
+def distribucion():
+    ini, fin, desde, hasta = periodo()
+    cfg = Configuracion.actual()
+    ventas = Venta.query.filter(Venta.anulada.is_(False), Venta.fecha >= ini,
+                                Venta.fecha < fin).all()
+    por_dia = defaultdict(lambda: {"ventas": 0.0, "costo": 0.0, "num": 0})
+    for v in ventas:
+        d = por_dia[v.fecha.date()]
+        d["ventas"] += v.total
+        d["costo"] += v.costo_total
+        d["num"] += 1
+    pct = dict(reinversion=cfg.pct_reinversion, dueno=cfg.pct_dueno,
+               emergencia=cfg.pct_emergencia)
+
+    def repartir(ventas_, costo_):
+        ganancia = ventas_ - costo_
+        base = ventas_ if cfg.base == "ventas" else max(ganancia, 0)
+        r = {k: base * p / 100 for k, p in pct.items()}
+        r.update(ventas=ventas_, costo=costo_, ganancia=ganancia, base=base)
+        # Con base "ganancia", la reposición del costo va aparte y siempre queda cubierta.
+        r["reponer"] = costo_ if cfg.base == "ganancia" else 0
+        r["faltante"] = max(costo_ - r["reinversion"], 0) if cfg.base == "ventas" else 0
+        return r
+
+    filas = []
+    for dia in sorted(por_dia, reverse=True):
+        d = por_dia[dia]
+        f = repartir(d["ventas"], d["costo"])
+        f.update(fecha=dia, num=d["num"])
+        filas.append(f)
+    tot = repartir(sum(v.total for v in ventas), sum(v.costo_total for v in ventas))
+    return render_template("distribucion.html", cfg=cfg, filas=filas, tot=tot,
+                           desde=desde, hasta=hasta)
+
+
+@app.route("/configuracion", methods=["GET", "POST"])
+@rol_requerido("admin")
+def configuracion():
+    cfg = Configuracion.actual()
+    if request.method == "POST":
+        r, d, e = (n(request.form.get(k)) for k in ("pct_reinversion", "pct_dueno", "pct_emergencia"))
+        base = request.form.get("base", "ventas")
+        if min(r, d, e) < 0:
+            flash("Los porcentajes no pueden ser negativos.", "error")
+        elif abs(r + d + e - 100) > 0.01:
+            flash(f"Los porcentajes deben sumar 100%. Ahora suman {r + d + e:g}%.", "error")
+        elif base not in ("ventas", "ganancia"):
+            flash("Base de cálculo no válida.", "error")
+        else:
+            cfg.pct_reinversion, cfg.pct_dueno, cfg.pct_emergencia, cfg.base = r, d, e, base
+            db.session.commit()
+            flash("Regla de distribución guardada.", "ok")
+            return redirect(url_for("distribucion"))
+    return render_template("configuracion.html", cfg=cfg)
 
 
 # ---------------------------------------------------------------- insumos

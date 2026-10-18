@@ -64,6 +64,25 @@ class Usuario(UserMixin, db.Model):
         return ROLES.get(self.rol, self.rol)
 
 
+class Configuracion(db.Model):
+    """Una sola fila con la regla de distribución del dinero."""
+    __tablename__ = "vk_configuracion"
+    id = db.Column(db.Integer, primary_key=True)
+    pct_reinversion = db.Column(db.Float, nullable=False, default=60)
+    pct_dueno = db.Column(db.Float, nullable=False, default=30)
+    pct_emergencia = db.Column(db.Float, nullable=False, default=10)
+    base = db.Column(db.String(20), nullable=False, default="ventas")  # ventas | ganancia
+
+    @classmethod
+    def actual(cls):
+        c = db.session.get(cls, 1)
+        if not c:
+            c = cls(id=1)
+            db.session.add(c)
+            db.session.commit()
+        return c
+
+
 class Insumo(db.Model):
     __tablename__ = "vk_insumos"
     id = db.Column(db.Integer, primary_key=True)
