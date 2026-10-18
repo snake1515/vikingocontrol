@@ -22,7 +22,9 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY") or secrets.token_hex(32)
-db_url = os.getenv("DATABASE_URL", "sqlite:///vikingos.db")
+db_url = (os.getenv("DATABASE_URL") or "sqlite:///vikingos.db").strip().strip('"').strip("'")
+if "[YOUR-PASSWORD]" in db_url:
+    raise SystemExit("ERROR DATABASE_URL: aún contiene [YOUR-PASSWORD]. Reemplázalo por la contraseña real de Supabase.")
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -652,7 +654,16 @@ def no_encontrado(e):
 # ------------------------------------------------------------- arranque BD
 def inicializar_bd():
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            print("=" * 70, flush=True)
+            print("ERROR: no se pudo conectar a la base de datos (DATABASE_URL).", flush=True)
+            print("Revisa: usar 'Session pooler' (puerto 5432), contraseña correcta sin", flush=True)
+            print("corchetes, y sin espacios. Detalle técnico:", flush=True)
+            print(str(e).split("\n")[0][:300], flush=True)
+            print("=" * 70, flush=True)
+            raise
         if not Usuario.query.first():
             try:
                 admin = Usuario(nombre=os.getenv("ADMIN_NOMBRE", "Administrador"),
