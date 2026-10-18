@@ -18,6 +18,7 @@ from models import (CATEGORIAS_GASTO, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, A
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
                     VentaItem, ahora, db)
 import comprobantes
+import reportes as rpt
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
 from services import (ErrorNegocio, anular_venta, registrar_compra,
                       registrar_produccion, registrar_venta)
@@ -479,6 +480,47 @@ def activo_eliminar(id):
     db.session.commit()
     flash(f"«{a.nombre}» eliminado (registrado por error).", "ok")
     return redirect(url_for("activos"))
+
+
+# ----------------------------------------------------------------- reportes
+def _params_reporte():
+    agrupar = request.args.get("agrupar", "semanal")
+    if agrupar not in rpt.AGRUPACIONES:
+        agrupar = "semanal"
+    hoy_d = ahora().date()
+    d0, h0 = rpt.rango_por_defecto(agrupar, hoy_d)
+    desde = _fecha(request.args.get("desde"), d0)
+    hasta = _fecha(request.args.get("hasta"), h0)
+    if hasta < desde:
+        desde, hasta = hasta, desde
+    if (hasta - desde).days > 3 * 366:  # límite de seguridad: 3 años
+        desde = hasta - timedelta(days=3 * 366)
+    return agrupar, desde, hasta
+
+
+@app.route("/reportes")
+@rol_requerido("admin")
+def reportes():
+    agrupar, desde, hasta = _params_reporte()
+    rep = rpt.generar(desde, hasta, agrupar)
+    serie = dict(labels=[f["periodo"] for f in rep["filas"]],
+                 ventas=[round(f["ventas"]) for f in rep["filas"]],
+                 compras=[round(f["compras"]) for f in rep["filas"]],
+                 neta=[round(f["neta"]) for f in rep["filas"]])
+    return render_template("reportes.html", rep=rep, serie=serie, agrupar=agrupar,
+                           agrupaciones=rpt.AGRUPACIONES, columnas=rpt.COLUMNAS,
+                           desde=desde.isoformat(), hasta=hasta.isoformat())
+
+
+@app.route("/reportes/excel")
+@rol_requerido("admin")
+def reportes_excel():
+    agrupar, desde, hasta = _params_reporte()
+    rep = rpt.generar(desde, hasta, agrupar)
+    data = rpt.excel(rep, desde, hasta, agrupar, DatosNegocio.actual().nombre)
+    nombre = f"reporte_{agrupar}_{desde.isoformat()}_a_{hasta.isoformat()}.xlsx"
+    return Response(data, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
 # ------------------------------------------------------------------- gastos

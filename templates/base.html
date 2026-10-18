@@ -30,6 +30,7 @@
     <nav class="nav">
       {% if puede('admin') %}
       <a href="{{ url_for('inicio') }}" class="{{ 'on' if ep == 'inicio' }}"><span class="ico">◧</span>Resumen</a>
+      <a href="{{ url_for('reportes') }}" class="{{ 'on' if ep.startswith('reportes') }}"><span class="ico">▦</span>Reportes</a>
       <a href="{{ url_for('distribucion') }}" class="{{ 'on' if ep in ('distribucion', 'configuracion') }}"><span class="ico">%</span>Distribución</a>
       {% endif %}
       {% if puede('admin', 'vendedor') %}
