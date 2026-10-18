@@ -88,7 +88,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/chart.umd.js', v=STATIC_V) }}"></script>
 <script>
   const S = {{ serie|tojson }};
   new Chart(document.getElementById('chartDias'), {

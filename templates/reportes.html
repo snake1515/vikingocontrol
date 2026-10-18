@@ -82,7 +82,7 @@
 <p class="hint" style="margin-top:12px">El Excel trae 5 hojas: consolidado (con totales en fórmulas y gráfico), por referencia, gastos, compras y ventas detalladas.</p>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/chart.umd.js', v=STATIC_V) }}"></script>
 <script>
   const S = {{ serie|tojson }};
   new Chart(document.getElementById('ch'), {

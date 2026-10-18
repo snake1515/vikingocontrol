@@ -37,6 +37,14 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 NOMBRE_NEGOCIO = os.getenv("NOMBRE_NEGOCIO", "VikingoControl")
+# Archivos estáticos con caché larga; la versión cambia en cada despliegue
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 30
+STATIC_V = (os.getenv("RENDER_GIT_COMMIT") or secrets.token_hex(4))[:8]
+try:
+    from flask_compress import Compress
+    Compress(app)
+except ImportError:  # sin compresión si no está instalado
+    pass
 
 db.init_app(app)
 login_manager = LoginManager(app)
@@ -136,15 +144,26 @@ def verificar_csrf():
 def contexto():
     def puede(*roles):
         return current_user.is_authenticated and current_user.rol in roles
-    nombre = NOMBRE_NEGOCIO
-    try:
-        neg = db.session.get(DatosNegocio, 1)
-        if neg and neg.nombre and neg.nombre != "Mi negocio de vikingos":
-            nombre = neg.nombre
-    except Exception:
-        db.session.rollback()
-    return dict(csrf_token=csrf_token, puede=puede, ROLES=ROLES,
-                NOMBRE_NEGOCIO=nombre, hoy=ahora().date().isoformat())
+    return dict(csrf_token=csrf_token, puede=puede, ROLES=ROLES, STATIC_V=STATIC_V,
+                NOMBRE_NEGOCIO=nombre_negocio(), hoy=ahora().date().isoformat())
+
+
+_cache_nombre = {"valor": None, "hasta": 0.0}
+
+
+def nombre_negocio(refrescar=False):
+    """Nombre del negocio con caché de 10 minutos (evita una consulta por página)."""
+    import time
+    if refrescar or _cache_nombre["valor"] is None or time.time() > _cache_nombre["hasta"]:
+        nombre = NOMBRE_NEGOCIO
+        try:
+            neg = db.session.get(DatosNegocio, 1)
+            if neg and neg.nombre:
+                nombre = neg.nombre
+        except Exception:
+            db.session.rollback()
+        _cache_nombre.update(valor=nombre, hasta=time.time() + 600)
+    return _cache_nombre["valor"]
 
 
 @app.template_filter("cop")
@@ -948,6 +967,7 @@ def negocio():
                                  ("telefono", 40), ("mensaje", 200)):
                 setattr(neg, campo, (f.get(campo, "").strip()[:largo]) or None)
             db.session.commit()
+            nombre_negocio(refrescar=True)
             flash("Datos del negocio guardados. Así saldrán en los comprobantes.", "ok")
             return redirect(url_for("negocio"))
     ultima = Venta.query.order_by(Venta.id.desc()).first()

@@ -136,8 +136,8 @@ class CompraInsumo(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
     anulada = db.Column(db.Boolean, nullable=False, default=False)
 
-    insumo = db.relationship("Insumo")
-    usuario = db.relationship("Usuario")
+    insumo = db.relationship("Insumo", lazy="joined")
+    usuario = db.relationship("Usuario", lazy="joined")
 
 
 class Producto(db.Model):
@@ -153,7 +153,7 @@ class Producto(db.Model):
     activo = db.Column(db.Boolean, nullable=False, default=True)
 
     receta = db.relationship(
-        "RecetaItem", back_populates="producto",
+        "RecetaItem", back_populates="producto", lazy="selectin",
         cascade="all, delete-orphan", order_by="RecetaItem.id",
     )
 
@@ -195,7 +195,7 @@ class RecetaItem(db.Model):
     cantidad = db.Column(db.Float, nullable=False)
 
     producto = db.relationship("Producto", back_populates="receta")
-    insumo = db.relationship("Insumo")
+    insumo = db.relationship("Insumo", lazy="joined")
 
 
 class Produccion(db.Model):
@@ -224,10 +224,10 @@ class Produccion(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
     anulada = db.Column(db.Boolean, nullable=False, default=False)
 
-    producto = db.relationship("Producto")
-    usuario = db.relationship("Usuario")
+    producto = db.relationship("Producto", lazy="joined")
+    usuario = db.relationship("Usuario", lazy="joined")
     consumos = db.relationship(
-        "ProduccionConsumo", back_populates="produccion",
+        "ProduccionConsumo", back_populates="produccion", lazy="selectin",
         cascade="all, delete-orphan",
     )
 
@@ -247,7 +247,7 @@ class ProduccionConsumo(db.Model):
     costo_total = db.Column(db.Float, nullable=False)
 
     produccion = db.relationship("Produccion", back_populates="consumos")
-    insumo = db.relationship("Insumo")
+    insumo = db.relationship("Insumo", lazy="joined")
 
 
 class Venta(db.Model):
@@ -263,9 +263,9 @@ class Venta(db.Model):
     anulada = db.Column(db.Boolean, nullable=False, default=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
 
-    usuario = db.relationship("Usuario")
+    usuario = db.relationship("Usuario", lazy="joined")
     items = db.relationship(
-        "VentaItem", back_populates="venta", cascade="all, delete-orphan",
+        "VentaItem", back_populates="venta", cascade="all, delete-orphan", lazy="selectin",
     )
 
     @property
@@ -285,7 +285,7 @@ class VentaItem(db.Model):
     costo = db.Column(db.Float, nullable=False)
 
     venta = db.relationship("Venta", back_populates="items")
-    producto = db.relationship("Producto")
+    producto = db.relationship("Producto", lazy="joined")
 
 
 class Activo(db.Model):

@@ -6,9 +6,11 @@
   <title>{% block title %}{{ NOMBRE_NEGOCIO }}{% endblock %} · {{ NOMBRE_NEGOCIO }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=STATIC_V) }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}">
   <style>
+    #carga { position: fixed; top: 0; left: 0; height: 3px; width: 0; background: var(--accent); z-index: 100; transition: width .3s ease; box-shadow: 0 0 8px var(--accent); }
+    #carga.on { width: 70%; transition: width 4s cubic-bezier(.1,.7,.2,1); }
     .overlay { display: none; }
     @media (max-width: 820px) {
       #menu-toggle:checked ~ .overlay { display: block; position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.35); margin: 0; }
@@ -18,15 +20,16 @@
 </head>
 <body>
 {% set ep = request.endpoint or '' %}
+<div id="carga"></div>
 <input type="checkbox" id="menu-toggle">
 <label for="menu-toggle" class="overlay" aria-hidden="true"></label>
 <header class="topbar">
-  <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg') }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b></div></div>
+  <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg', v=STATIC_V) }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b></div></div>
   <label for="menu-toggle" aria-label="Abrir menú">☰</label>
 </header>
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg') }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b><small>Producción y ventas</small></div></div>
+    <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg', v=STATIC_V) }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b><small>Producción y ventas</small></div></div>
     <nav class="nav">
       {% if puede('admin') %}
       <a href="{{ url_for('inicio') }}" class="{{ 'on' if ep == 'inicio' }}"><span class="ico">◧</span>Resumen</a>
@@ -73,6 +76,28 @@
   const COP = v => (v < -0.5 ? '-$ ' : '$ ') + Math.round(Math.abs(v || 0)).toLocaleString('es-CO');
   const NUM = (v, d = 2) => (v || 0).toLocaleString('es-CO', { maximumFractionDigits: d });
   const val = el => { const x = parseFloat(String(el && el.value || '').replace(',', '.')); return isNaN(x) ? 0 : x; };
+</script>
+<script>
+  // Navegación más ágil: precarga la página al pasar el mouse o tocar un enlace del menú,
+  // y muestra una barra de carga mientras llega la siguiente pantalla.
+  (() => {
+    const hechos = new Set(), barra = document.getElementById('carga');
+    const precargar = a => {
+      if (!a || !a.href || hechos.has(a.href) || a.target === '_blank' || a.hasAttribute('download')) return;
+      if (a.origin !== location.origin || a.href.includes('/logout') || a.href.includes('comprobante') || a.href.includes('excel')) return;
+      hechos.add(a.href);
+      const l = document.createElement('link'); l.rel = 'prefetch'; l.href = a.href; document.head.appendChild(l);
+    };
+    document.addEventListener('mouseover', e => precargar(e.target.closest('a')), { passive: true });
+    document.addEventListener('touchstart', e => precargar(e.target.closest('a')), { passive: true });
+    document.addEventListener('click', e => {
+      const a = e.target.closest('a');
+      if (a && a.href && a.origin === location.origin && !a.target && !a.hasAttribute('download') && !a.href.includes('#')
+          && !a.href.includes('descargar') && !a.href.includes('excel') && !e.ctrlKey && !e.metaKey) barra.classList.add('on');
+    });
+    document.addEventListener('submit', () => barra.classList.add('on'));
+    window.addEventListener('pageshow', () => barra.classList.remove('on'));
+  })();
 </script>
 {% block scripts %}{% endblock %}
 </body>
