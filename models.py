@@ -83,6 +83,27 @@ class Configuracion(db.Model):
         return c
 
 
+class DatosNegocio(db.Model):
+    """Datos que salen en el encabezado de los comprobantes de venta."""
+    __tablename__ = "vk_negocio"
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False, default="Mi negocio de vikingos")
+    nit = db.Column(db.String(40))
+    direccion = db.Column(db.String(160))
+    ciudad = db.Column(db.String(80))
+    telefono = db.Column(db.String(40))
+    mensaje = db.Column(db.String(200), default="¡Gracias por su compra!")
+
+    @classmethod
+    def actual(cls):
+        d = db.session.get(cls, 1)
+        if not d:
+            d = cls(id=1)
+            db.session.add(d)
+            db.session.commit()
+        return d
+
+
 class Insumo(db.Model):
     __tablename__ = "vk_insumos"
     id = db.Column(db.Integer, primary_key=True)

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Datos del negocio{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Datos del negocio</h1><p>Lo que aparece en el encabezado de cada comprobante de venta.</p></div></div>
+<div class="grid g-main">
+  <div class="card">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label>Nombre del negocio</label><input class="input" name="nombre" value="{{ neg.nombre or '' }}" required></div>
+      <div class="form-row">
+        <div class="field"><label>NIT o cédula</label><input class="input" name="nit" value="{{ neg.nit or '' }}" placeholder="Opcional"></div>
+        <div class="field"><label>Teléfono / WhatsApp</label><input class="input" name="telefono" value="{{ neg.telefono or '' }}" placeholder="Opcional"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Dirección</label><input class="input" name="direccion" value="{{ neg.direccion or '' }}" placeholder="Opcional"></div>
+        <div class="field"><label>Ciudad</label><input class="input" name="ciudad" value="{{ neg.ciudad or '' }}" placeholder="Opcional"></div>
+      </div>
+      <div class="field"><label>Mensaje al pie</label><input class="input" name="mensaje" value="{{ neg.mensaje or '' }}" placeholder="Ej: ¡Gracias por su compra!"></div>
+      <button class="btn">Guardar</button>
+    </form>
+  </div>
+  <div class="card summary">
+    <h2>Vista previa</h2>
+    {% if ultima %}
+      <p class="hint">Así se ve con la última venta (#{{ ultima.id }}). Guarda primero para ver los cambios.</p>
+      <img src="{{ url_for('venta_comprobante', id=ultima.id, fmt='jpg') }}?v={{ range(100000)|random }}" alt="Vista previa del comprobante" style="width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px">
+    {% else %}
+      <p class="hint">Cuando registres la primera venta verás aquí cómo queda el comprobante.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

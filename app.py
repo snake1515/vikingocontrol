@@ -6,16 +6,17 @@ from datetime import date, datetime, timedelta
 from functools import wraps
 
 from dotenv import load_dotenv
-from flask import (Flask, abort, flash, redirect, render_template, request,
-                   session, url_for)
+from flask import (Flask, Response, abort, flash, redirect, render_template,
+                   request, session, url_for)
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
 from models import (METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, CompraInsumo,
-                    Configuracion,
+                    Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
                     VentaItem, ahora, db)
+import comprobantes
 from services import (ErrorNegocio, anular_venta, registrar_compra,
                       registrar_produccion, registrar_venta)
 
@@ -642,6 +643,46 @@ def venta_detalle(id):
     if current_user.rol == "vendedor" and v.usuario_id != current_user.id:
         abort(404)
     return render_template("venta_detalle.html", v=v)
+
+
+@app.route("/ventas/<int:id>/comprobante.<fmt>")
+@rol_requerido("admin", "vendedor")
+def venta_comprobante(id, fmt):
+    v = db.session.get(Venta, id) or abort(404)
+    if current_user.rol == "vendedor" and v.usuario_id != current_user.id:
+        abort(404)
+    negocio = DatosNegocio.actual()
+    nombre = f"{comprobantes.numero(v)}.{fmt}"
+    if fmt == "pdf":
+        data, mime = comprobantes.pdf(v, negocio), "application/pdf"
+    elif fmt == "jpg":
+        data, mime = comprobantes.jpg(v, negocio), "image/jpeg"
+    else:
+        abort(404)
+    modo = "attachment" if request.args.get("descargar") else "inline"
+    return Response(data, mimetype=mime,
+                    headers={"Content-Disposition": f'{modo}; filename="{nombre}"'})
+
+
+@app.route("/negocio", methods=["GET", "POST"])
+@rol_requerido("admin")
+def negocio():
+    neg = DatosNegocio.actual()
+    if request.method == "POST":
+        f = request.form
+        nombre = f.get("nombre", "").strip()
+        if not nombre:
+            flash("El nombre del negocio es obligatorio.", "error")
+        else:
+            neg.nombre = nombre[:120]
+            for campo, largo in (("nit", 40), ("direccion", 160), ("ciudad", 80),
+                                 ("telefono", 40), ("mensaje", 200)):
+                setattr(neg, campo, (f.get(campo, "").strip()[:largo]) or None)
+            db.session.commit()
+            flash("Datos del negocio guardados. Así saldrán en los comprobantes.", "ok")
+            return redirect(url_for("negocio"))
+    ultima = Venta.query.order_by(Venta.id.desc()).first()
+    return render_template("negocio.html", neg=neg, ultima=ultima)
 
 
 @app.route("/ventas/<int:id>/anular", methods=["POST"])

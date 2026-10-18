@@ -45,6 +45,7 @@
       {% if puede('admin') %}
       <div class="nav-sep"></div>
       <a href="{{ url_for('usuarios') }}" class="{{ 'on' if ep.startswith('usuario') }}"><span class="ico">☺</span>Usuarios</a>
+      <a href="{{ url_for('negocio') }}" class="{{ 'on' if ep == 'negocio' }}"><span class="ico">⌂</span>Datos del negocio</a>
       {% endif %}
     </nav>
     <div class="me">

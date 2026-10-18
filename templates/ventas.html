@@ -19,7 +19,7 @@
 </div>
 <div class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th>Pago</th>{% if puede('admin') %}<th>Vendedor</th>{% endif %}<th class="num">Total</th>{% if puede('admin') %}<th class="num">Ganancia</th>{% endif %}</tr></thead>
+    <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th>Pago</th>{% if puede('admin') %}<th>Vendedor</th>{% endif %}<th class="num">Total</th>{% if puede('admin') %}<th class="num">Ganancia</th>{% endif %}<th></th></tr></thead>
     <tbody>
     {% for v in items %}
       <tr class="{{ 'anulada' if v.anulada }}">
@@ -31,8 +31,9 @@
         {% if puede('admin') %}<td>{{ v.usuario.nombre if v.usuario else '' }}</td>{% endif %}
         <td class="num"><b>{{ v.total|cop }}</b></td>
         {% if puede('admin') %}<td class="num {{ 'pos' if v.ganancia >= 0 else 'neg' }}">{{ v.ganancia|cop }}</td>{% endif %}
+        <td class="r" style="white-space:nowrap"><a class="btn sec sm" href="{{ url_for('venta_comprobante', id=v.id, fmt='pdf') }}" target="_blank" title="Comprobante PDF">PDF</a> <a class="btn sec sm" href="{{ url_for('venta_comprobante', id=v.id, fmt='jpg', descargar=1) }}" title="Comprobante JPG">JPG</a></td>
       </tr>
-    {% else %}<tr><td colspan="8" class="empty">No hay ventas en este periodo.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="9" class="empty">No hay ventas en este periodo.</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </div>
