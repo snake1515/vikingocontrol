@@ -664,7 +664,7 @@ def compras():
         for c in (CompraInsumo.query.filter(CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin)
                   .order_by(CompraInsumo.fecha.desc()).all()):
             filas.append(dict(tipo="insumo", fecha=c.fecha, orden=c.fecha, nombre=c.insumo.nombre,
-                              cantidad=f"{c.cantidad:g} {c.insumo.unidad}", unitario=c.costo_unitario,
+                              cantidad=f"{filtro_num(c.cantidad, 3)} {c.insumo.unidad}", unitario=c.costo_unitario,
                               total=c.costo_total, proveedor=c.proveedor, nota=c.nota,
                               anulada=c.anulada, obj=c))
     if tipo in ("", "equipos") and current_user.rol == "admin":
