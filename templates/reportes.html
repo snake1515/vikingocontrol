@@ -31,7 +31,7 @@
 {% set t = rep.tot %}
 <div class="kpis">
   <div class="kpi"><div class="lbl">Ventas</div><div class="val">{{ t.ventas|cop }}</div><div class="sub">{{ t.num_ventas|num }} ventas · {{ t.unid_vend|num }} vikingos</div></div>
-  <div class="kpi"><div class="lbl">Compras de insumos</div><div class="val">{{ t.compras|cop }}</div><div class="sub">Producidos {{ t.unid_prod|num }} vikingos</div></div>
+  <div class="kpi"><div class="lbl">Compras</div><div class="val">{{ (t.compras + t.compras_eq)|cop }}</div><div class="sub">Insumos {{ t.compras|cop }} · equipos {{ t.compras_eq|cop }}</div></div>
   <div class="kpi"><div class="lbl">Costos + gastos</div><div class="val">{{ (t.costo_vend + t.equipos + t.gastos)|cop }}</div><div class="sub">Vendido {{ t.costo_vend|cop }} · equipos {{ t.equipos|cop }} · gastos {{ t.gastos|cop }}</div></div>
   <div class="kpi hl"><div class="lbl">Ganancia neta</div><div class="val {{ 'pos' if t.neta >= 0 else 'neg' }}">{{ t.neta|cop }}</div><div class="sub">{% if t.margen is not none %}Margen neto {{ t.margen|num(1) }}%{% else %}Sin ventas{% endif %} · bruta {{ t.bruta|cop }}</div></div>
 </div>

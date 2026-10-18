@@ -163,3 +163,42 @@ def anular_venta(venta):
             p.stock, p.costo_promedio, it.cantidad, it.costo_unitario)
         p.stock = (p.stock or 0) + it.cantidad
     venta.anulada = True
+
+
+def _quitar_de_promedio(stock, costo_prom, cantidad, costo_unit):
+    """Inverso del promedio ponderado: saca una entrada del costo promedio."""
+    restante = (stock or 0) - cantidad
+    if restante <= TOL:
+        return costo_prom
+    return max(((stock or 0) * (costo_prom or 0) - cantidad * costo_unit) / restante, 0)
+
+
+def anular_compra(compra):
+    if compra.anulada:
+        raise ErrorNegocio("Esta compra ya estaba anulada.")
+    ins = compra.insumo
+    if (ins.stock or 0) + TOL < compra.cantidad:
+        raise ErrorNegocio(
+            f"No se puede anular: de «{ins.nombre}» quedan {ins.stock:g} {ins.unidad} y la compra fue de "
+            f"{compra.cantidad:g}. Parte ya se usó en producción; anula primero esas producciones.")
+    ins.costo_promedio = _quitar_de_promedio(ins.stock, ins.costo_promedio, compra.cantidad,
+                                             compra.costo_unitario)
+    ins.stock = max((ins.stock or 0) - compra.cantidad, 0)
+    compra.anulada = True
+
+
+def anular_produccion(prod):
+    if prod.anulada:
+        raise ErrorNegocio("Esta producción ya estaba anulada.")
+    p = prod.producto
+    if (p.stock or 0) < prod.cantidad:
+        raise ErrorNegocio(
+            f"No se puede anular: de «{p.nombre}» quedan {p.stock} vikingos y esta producción fue de "
+            f"{prod.cantidad}. Algunos ya se vendieron; anula primero esas ventas.")
+    p.costo_promedio = _quitar_de_promedio(p.stock, p.costo_promedio, prod.cantidad, prod.costo_unitario)
+    p.stock = (p.stock or 0) - prod.cantidad
+    for c in prod.consumos:
+        ins = c.insumo
+        ins.costo_promedio = promedio_ponderado(ins.stock, ins.costo_promedio, c.cantidad, c.costo_unitario)
+        ins.stock = (ins.stock or 0) + c.cantidad
+    prod.anulada = True

@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Editar' if a else 'Nuevo' }} equipo{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>{{ 'Editar equipo' if a else 'Nuevo equipo' }}</h1><p>Herramientas y máquinas que se usan para producir y duran más de una tanda.</p></div></div>
+<div class="page-head"><div><h1>{{ 'Editar equipo' if a else ('Registrar compra de equipo' if origen == 'compras' else 'Nuevo equipo') }}</h1><p>Herramientas y máquinas que se usan para producir y duran más de una tanda.</p></div></div>
+{% if origen == 'compras' and not a %}
+<div class="seg-tabs" style="margin-bottom:16px"><a href="{{ url_for('compra_nueva') }}">Insumos</a><a class="on">Equipo o herramienta</a></div>
+{% endif %}
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g-main">
@@ -17,8 +20,10 @@
         <div class="field"><label>Valor residual ($)</label><input class="input" id="resid" type="number" step="any" min="0" name="valor_residual" value="{{ request.form.valor_residual or ('%g'|format(a.valor_residual) if a and a.valor_residual else '') }}" placeholder="0">
           <div class="hint">Lo que valdría al final (venderlo usado). Si no sabes, déjalo en 0.</div></div>
       </div>
-      <div class="field"><label>Descripción</label><input class="input" name="descripcion" value="{{ request.form.descripcion or (a.descripcion or '' if a else '') }}" placeholder="Opcional: marca, serial, dónde se compró"></div>
-      <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('activos') }}">Cancelar</a></div>
+      <input type="hidden" name="origen" value="{{ origen }}">
+      <div class="field"><label>Proveedor</label><input class="input" name="proveedor" value="{{ request.form.proveedor or (a.proveedor or '' if a else '') }}" placeholder="Opcional: dónde se compró"></div>
+      <div class="field"><label>Descripción</label><input class="input" name="descripcion" value="{{ request.form.descripcion or (a.descripcion or '' if a else '') }}" placeholder="Opcional: marca, serial"></div>
+      <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('compras') if origen == 'compras' else url_for('activos') }}">Cancelar</a></div>
     </div>
     <div class="card summary">
       <h2>Se recupera así</h2>

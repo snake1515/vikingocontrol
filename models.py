@@ -134,6 +134,7 @@ class CompraInsumo(db.Model):
     proveedor = db.Column(db.String(120))
     nota = db.Column(db.String(255))
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    anulada = db.Column(db.Boolean, nullable=False, default=False)
 
     insumo = db.relationship("Insumo")
     usuario = db.relationship("Usuario")
@@ -221,6 +222,7 @@ class Produccion(db.Model):
     costo_unitario = db.Column(db.Float, nullable=False, default=0)
     nota = db.Column(db.String(255))
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    anulada = db.Column(db.Boolean, nullable=False, default=False)
 
     producto = db.relationship("Producto")
     usuario = db.relationship("Usuario")
@@ -299,6 +301,7 @@ class Activo(db.Model):
     fecha_baja = db.Column(db.Date)
     motivo_baja = db.Column(db.String(255))
     eliminado = db.Column(db.Boolean, nullable=False, default=False)
+    proveedor = db.Column(db.String(120))
 
     # --- cálculos (línea recta, prorrateo diario) ---
     @property

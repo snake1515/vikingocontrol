@@ -2,33 +2,53 @@
 {% block title %}Compras{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Compras de insumos</h1><p>Entradas de materia prima con su costo</p></div>
+  <div><h1>Compras</h1><p>Insumos y equipos comprados en el periodo</p></div>
   <div class="actions">
     <form class="filters" method="get">
       <div class="field"><label>Desde</label><input class="input" type="date" name="desde" value="{{ desde }}"></div>
       <div class="field"><label>Hasta</label><input class="input" type="date" name="hasta" value="{{ hasta }}"></div>
+      {% if puede('admin') %}<div class="field"><label>Tipo</label><select class="input" name="tipo">
+        <option value="">Todo</option><option value="insumos" {{ 'selected' if tipo == 'insumos' }}>Insumos</option><option value="equipos" {{ 'selected' if tipo == 'equipos' }}>Equipos</option></select></div>{% endif %}
       <button class="btn sec">Filtrar</button>
     </form>
     <a class="btn" href="{{ url_for('compra_nueva') }}">＋ Registrar compra</a>
   </div>
 </div>
+{% if puede('admin') %}
+<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+  <div class="kpi"><div class="lbl">Insumos</div><div class="val">{{ total_insumos|cop }}</div></div>
+  <div class="kpi"><div class="lbl">Equipos</div><div class="val">{{ total_equipos|cop }}</div><div class="sub">Se recuperan con la <a href="{{ url_for('activos') }}">depreciación</a></div></div>
+  <div class="kpi hl"><div class="lbl">Total compras</div><div class="val">{{ total|cop }}</div></div>
+</div>
+{% endif %}
 <div class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Fecha</th><th>Insumo</th><th class="num">Cantidad</th><th class="num">Costo unit.</th><th class="num">Total</th><th>Proveedor</th><th>Nota</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Qué se compró</th><th class="num">Cantidad</th><th class="num">Costo unit.</th><th class="num">Total</th><th>Proveedor</th><th>Nota</th>{% if puede('admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
-    {% for c in items %}
-      <tr>
-        <td>{{ c.fecha|fecha }}</td>
-        <td><b>{{ c.insumo.nombre }}</b></td>
-        <td class="num">{{ c.cantidad|num(3) }} {{ c.insumo.unidad }}</td>
-        <td class="num">{{ c.costo_unitario|cop }}</td>
-        <td class="num">{{ c.costo_total|cop }}</td>
-        <td>{{ c.proveedor or '—' }}</td>
-        <td><small>{{ c.nota or '' }}</small></td>
+    {% for f in filas %}
+      <tr class="{{ 'anulada' if f.anulada }}">
+        <td>{{ f.fecha.strftime('%d/%m/%Y') }}</td>
+        <td>{% if f.tipo == 'equipo' %}<span class="badge berry">Equipo</span>{% else %}<span class="badge">Insumo</span>{% endif %}</td>
+        <td><b>{{ f.nombre }}</b></td>
+        <td class="num">{{ f.cantidad }}</td>
+        <td class="num">{{ f.unitario|cop }}</td>
+        <td class="num">{{ f.total|cop }}</td>
+        <td>{{ f.proveedor or '—' }}</td>
+        <td><small>{{ f.nota or '' }}</small>{% if f.anulada %} <span class="badge err">Anulada</span>{% endif %}</td>
+        {% if puede('admin') %}<td class="r" style="white-space:nowrap">
+          {% if f.tipo == 'insumo' and not f.anulada %}
+          <form method="post" action="{{ url_for('compra_anular', id=f.obj.id) }}" onsubmit="return confirm('¿Anular esta compra? Se descontará {{ f.cantidad }} de {{ f.nombre }} del inventario.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Anular</button>
+          </form>
+          {% elif f.tipo == 'equipo' %}
+          <a class="btn sec sm" href="{{ url_for('activo_form', id=f.obj.id, origen='compras') }}">Editar</a>
+          {% endif %}
+        </td>{% endif %}
       </tr>
-    {% else %}<tr><td colspan="7" class="empty">No hay compras en este periodo.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="9" class="empty">No hay compras en este periodo.</td></tr>{% endfor %}
     </tbody>
-    {% if items %}<tfoot><tr><td colspan="4">Total del periodo</td><td class="num">{{ total|cop }}</td><td colspan="2"></td></tr></tfoot>{% endif %}
+    {% if filas %}<tfoot><tr><td colspan="5">Total del periodo (sin anuladas)</td><td class="num">{{ total|cop }}</td><td colspan="3"></td></tr></tfoot>{% endif %}
   </table></div>
+  {% if puede('admin') %}<p class="hint" style="margin-top:10px">Para quitar un equipo comprado por error, se elimina desde <a href="{{ url_for('activos') }}">Equipos</a> → Más opciones.</p>{% endif %}
 </div>
 {% endblock %}

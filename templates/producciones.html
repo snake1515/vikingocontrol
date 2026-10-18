@@ -22,9 +22,9 @@
     <thead><tr><th>Fecha</th><th>Referencia</th><th class="num">Vikingos</th><th class="num">Insumos</th><th class="num">Mano obra</th><th class="num">Indirectos</th><th class="num">Total</th><th class="num">C/u</th></tr></thead>
     <tbody>
     {% for p in items %}
-      <tr>
+      <tr class="{{ 'anulada' if p.anulada }}">
         <td><a href="{{ url_for('produccion_detalle', id=p.id) }}">{{ p.fecha|fecha }}</a></td>
-        <td><b>{{ p.producto.nombre }}</b></td>
+        <td><b>{{ p.producto.nombre }}</b>{% if p.anulada %} <span class="badge err">Anulada</span>{% endif %}</td>
         <td class="num">{{ p.cantidad|num }}</td>
         <td class="num">{{ p.costo_insumos|cop }}</td>
         <td class="num">{{ p.costo_mano_obra|cop }}</td>

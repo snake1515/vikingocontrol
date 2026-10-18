@@ -10,13 +10,14 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func
 
 from activos_calc import activos_vigentes, depreciacion_dia
-from models import (CompraInsumo, Gasto, Produccion, Producto, Venta, VentaItem, db)
+from models import (Activo, CompraInsumo, Gasto, Produccion, Producto, Venta, VentaItem, db)
 
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 AGRUPACIONES = {"diario": "Por día", "semanal": "Por semana", "mensual": "Por mes"}
 
 COLUMNAS = [  # clave, título, es dinero
     ("compras", "Compras insumos", True),
+    ("compras_eq", "Compras equipos", True),
     ("unid_prod", "Vikingos producidos", False),
     ("costo_prod", "Costo producción", True),
     ("unid_vend", "Vikingos vendidos", False),
@@ -79,10 +80,15 @@ def generar(desde, hasta, agrupar):
         f["unid_vend"] += v.unidades
         f["num_ventas"] += 1
     # Compras
-    for c in CompraInsumo.query.filter(CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin):
+    for c in CompraInsumo.query.filter(CompraInsumo.anulada.is_(False), CompraInsumo.fecha >= ini,
+                                       CompraInsumo.fecha < fin):
         filas[b(c.fecha.date())]["compras"] += c.costo_total
+    for a in Activo.query.filter(Activo.eliminado.is_(False), Activo.fecha_compra >= desde,
+                                 Activo.fecha_compra <= hasta):
+        filas[b(a.fecha_compra)]["compras_eq"] += a.valor
     # Producción
-    for p in Produccion.query.filter(Produccion.fecha >= ini, Produccion.fecha < fin):
+    for p in Produccion.query.filter(Produccion.anulada.is_(False), Produccion.fecha >= ini,
+                                     Produccion.fecha < fin):
         f = filas[b(p.fecha.date())]
         f["unid_prod"] += p.cantidad
         f["costo_prod"] += p.costo_total
@@ -252,7 +258,8 @@ def excel(rep, desde, hasta, agrupar, negocio):
     _encabezado(w4, 1, ["Fecha", "Insumo", "Cantidad", "Unidad", "Costo unitario", "Total", "Proveedor"])
     ini = datetime.combine(desde, datetime.min.time())
     fin = datetime.combine(hasta + timedelta(days=1), datetime.min.time())
-    for i, c in enumerate(CompraInsumo.query.filter(CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin)
+    for i, c in enumerate(CompraInsumo.query.filter(CompraInsumo.anulada.is_(False),
+                                                    CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin)
                           .order_by(CompraInsumo.fecha).all(), 2):
         w4.cell(row=i, column=1, value=c.fecha.date()).number_format = "DD/MM/YYYY"
         w4.cell(row=i, column=2, value=c.insumo.nombre)
@@ -261,7 +268,18 @@ def excel(rep, desde, hasta, agrupar, negocio):
         w4.cell(row=i, column=5, value=round(c.costo_unitario, 2)).number_format = FMT_COP
         w4.cell(row=i, column=6, value=round(c.costo_total, 2)).number_format = FMT_COP
         w4.cell(row=i, column=7, value=c.proveedor or "")
-    _anchos(w4, [12, 28, 12, 12, 15, 15, 26])
+    fila_eq = w4.max_row + 1
+    for a in (Activo.query.filter(Activo.eliminado.is_(False), Activo.fecha_compra >= desde,
+                                  Activo.fecha_compra <= hasta).order_by(Activo.fecha_compra).all()):
+        w4.cell(row=fila_eq, column=1, value=a.fecha_compra).number_format = "DD/MM/YYYY"
+        w4.cell(row=fila_eq, column=2, value=f"Equipo: {a.nombre}")
+        w4.cell(row=fila_eq, column=3, value=1)
+        w4.cell(row=fila_eq, column=4, value="equipo")
+        w4.cell(row=fila_eq, column=5, value=round(a.valor, 2)).number_format = FMT_COP
+        w4.cell(row=fila_eq, column=6, value=round(a.valor, 2)).number_format = FMT_COP
+        w4.cell(row=fila_eq, column=7, value=a.proveedor or "")
+        fila_eq += 1
+    _anchos(w4, [12, 32, 12, 12, 15, 15, 26])
 
     # Ventas detalladas
     w5 = wb.create_sheet("Ventas")

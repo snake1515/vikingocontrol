@@ -55,7 +55,7 @@
       {% endfor %}
       <div class="sum-line" style="margin-top:8px;border-top:1px solid var(--line)"><span>Depreciación de equipos<br><small><a href="{{ url_for('activos') }}">Ver equipos</a></small></span><b>{{ depreciacion|cop }}</b></div>
       <div class="sum-line"><span>Gastos del negocio<br><small>{% for c, v in gastos_det[:3] %}{{ c }}{{ ', ' if not loop.last }}{% else %}Publicidad, arriendo…{% endfor %} · <a href="{{ url_for('gastos') }}">Ver gastos</a></small></span><b>{{ gastos_tot|cop }}</b></div>
-      <p class="hint" style="margin-top:10px">Compras de insumos en el periodo: <b>{{ compras|cop }}</b></p>
+      <p class="hint" style="margin-top:10px">Compras en el periodo: insumos <b>{{ compras|cop }}</b>{% if compras_equipos %} · equipos <b>{{ compras_equipos|cop }}</b>{% endif %}</p>
     </div>
 
     <div class="card">

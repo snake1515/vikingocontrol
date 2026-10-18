@@ -45,7 +45,7 @@
       <thead><tr><th>Fecha</th><th class="num">Vikingos</th><th class="num">Costo total</th><th class="num">C/u</th></tr></thead>
       <tbody>
       {% for p in prods %}
-        <tr><td><a href="{{ url_for('produccion_detalle', id=p.id) }}">{{ p.fecha|fecha }}</a></td><td class="num">{{ p.cantidad|num }}</td><td class="num">{{ p.costo_total|cop }}</td><td class="num">{{ p.costo_unitario|cop }}</td></tr>
+        <tr class="{{ 'anulada' if p.anulada }}"><td><a href="{{ url_for('produccion_detalle', id=p.id) }}">{{ p.fecha|fecha }}</a></td><td class="num">{{ p.cantidad|num }}</td><td class="num">{{ p.costo_total|cop }}</td><td class="num">{{ p.costo_unitario|cop }}</td></tr>
       {% else %}<tr><td colspan="4" class="empty">Aún no se ha producido esta referencia.</td></tr>{% endfor %}
       </tbody>
     </table></div>

@@ -20,7 +20,7 @@ from models import (CATEGORIAS_GASTO, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, A
 import comprobantes
 import reportes as rpt
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
-from services import (ErrorNegocio, anular_venta, registrar_compra,
+from services import (ErrorNegocio, anular_compra, anular_produccion, anular_venta, registrar_compra,
                       registrar_produccion, registrar_venta)
 
 load_dotenv()
@@ -236,7 +236,8 @@ def inicio():
     ganancia = ingresos - costo_vendido
     unidades_vendidas = sum(v.unidades for v in ventas)
 
-    prods = Produccion.query.filter(Produccion.fecha >= ini, Produccion.fecha < fin).all()
+    prods = Produccion.query.filter(Produccion.anulada.is_(False), Produccion.fecha >= ini,
+                                    Produccion.fecha < fin).all()
     unidades_prod = sum(p.cantidad for p in prods)
     desglose = {
         "Insumos": sum(p.costo_insumos for p in prods),
@@ -248,7 +249,10 @@ def inicio():
     }
     costo_prod = sum(desglose.values())
     compras = db.session.query(func.coalesce(func.sum(CompraInsumo.costo_total), 0)).filter(
-        CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin).scalar()
+        CompraInsumo.anulada.is_(False), CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin).scalar()
+    compras_equipos = db.session.query(func.coalesce(func.sum(Activo.valor), 0)).filter(
+        Activo.eliminado.is_(False), Activo.fecha_compra >= ini.date(),
+        Activo.fecha_compra < fin.date()).scalar() or 0
 
     ranking = (db.session.query(
         Producto.id, Producto.nombre,
@@ -298,7 +302,7 @@ def inicio():
         unidades_vendidas=unidades_vendidas, num_ventas=len(ventas),
         unidades_prod=unidades_prod, costo_prod=costo_prod, desglose=desglose,
         costo_unit_prod=(costo_prod / unidades_prod) if unidades_prod else 0,
-        compras=compras or 0, ranking=ranking, serie=serie,
+        compras=compras or 0, compras_equipos=compras_equipos, ranking=ranking, serie=serie,
         valor_insumos=sum(i.valor_stock for i in insumos),
         valor_productos=sum(max(p.stock, 0) * p.costo_promedio for p in productos),
         alertas_insumos=[i for i in insumos if i.bajo_minimo],
@@ -451,10 +455,11 @@ def activo_form(id=None):
             a.nombre, a.fecha_compra, a.valor = nombre[:120], fecha, valor
             a.valor_residual, a.vida_util_meses = residual, vida
             a.descripcion = f.get("descripcion", "").strip()[:255] or None
+            a.proveedor = f.get("proveedor", "").strip()[:120] or None
             db.session.commit()
-            flash(f"Equipo «{nombre}» guardado.", "ok")
-            return redirect(url_for("activos"))
-    return render_template("activo_form.html", a=a)
+            flash(f"Equipo «{nombre}» guardado. Ya aparece en Compras y en Equipos.", "ok")
+            return redirect(url_for("compras") if f.get("origen") == "compras" else url_for("activos"))
+    return render_template("activo_form.html", a=a, origen=request.values.get("origen", ""))
 
 
 @app.route("/activos/<int:id>/baja", methods=["POST"])
@@ -505,7 +510,7 @@ def reportes():
     rep = rpt.generar(desde, hasta, agrupar)
     serie = dict(labels=[f["periodo"] for f in rep["filas"]],
                  ventas=[round(f["ventas"]) for f in rep["filas"]],
-                 compras=[round(f["compras"]) for f in rep["filas"]],
+                 compras=[round(f["compras"] + f["compras_eq"]) for f in rep["filas"]],
                  neta=[round(f["neta"]) for f in rep["filas"]])
     return render_template("reportes.html", rep=rep, serie=serie, agrupar=agrupar,
                            agrupaciones=rpt.AGRUPACIONES, columnas=rpt.COLUMNAS,
@@ -653,10 +658,27 @@ def insumo_eliminar(id):
 @rol_requerido("admin", "produccion")
 def compras():
     ini, fin, desde, hasta = periodo()
-    items = (CompraInsumo.query.filter(CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin)
-             .order_by(CompraInsumo.fecha.desc()).all())
-    return render_template("compras.html", items=items, desde=desde, hasta=hasta,
-                           total=sum(c.costo_total for c in items))
+    tipo = request.args.get("tipo", "")
+    filas = []
+    if tipo in ("", "insumos"):
+        for c in (CompraInsumo.query.filter(CompraInsumo.fecha >= ini, CompraInsumo.fecha < fin)
+                  .order_by(CompraInsumo.fecha.desc()).all()):
+            filas.append(dict(tipo="insumo", fecha=c.fecha, orden=c.fecha, nombre=c.insumo.nombre,
+                              cantidad=f"{c.cantidad:g} {c.insumo.unidad}", unitario=c.costo_unitario,
+                              total=c.costo_total, proveedor=c.proveedor, nota=c.nota,
+                              anulada=c.anulada, obj=c))
+    if tipo in ("", "equipos") and current_user.rol == "admin":
+        for a in (Activo.query.filter(Activo.eliminado.is_(False), Activo.fecha_compra >= ini.date(),
+                                      Activo.fecha_compra < fin.date()).all()):
+            filas.append(dict(tipo="equipo", fecha=a.fecha_compra,
+                              orden=datetime.combine(a.fecha_compra, datetime.min.time()),
+                              nombre=a.nombre, cantidad="1 equipo", unitario=a.valor, total=a.valor,
+                              proveedor=a.proveedor, nota=a.descripcion, anulada=False, obj=a))
+    filas.sort(key=lambda x: x["orden"], reverse=True)
+    t_ins = sum(f["total"] for f in filas if f["tipo"] == "insumo" and not f["anulada"])
+    t_eq = sum(f["total"] for f in filas if f["tipo"] == "equipo")
+    return render_template("compras.html", filas=filas, desde=desde, hasta=hasta, tipo=tipo,
+                           total=t_ins + t_eq, total_insumos=t_ins, total_equipos=t_eq)
 
 
 @app.route("/compras/nueva", methods=["GET", "POST"])
@@ -771,8 +793,9 @@ def producciones():
     ini, fin, desde, hasta = periodo()
     items = (Produccion.query.filter(Produccion.fecha >= ini, Produccion.fecha < fin)
              .order_by(Produccion.fecha.desc()).all())
-    unidades = sum(p.cantidad for p in items)
-    costo = sum(p.costo_total for p in items)
+    validas = [p for p in items if not p.anulada]
+    unidades = sum(p.cantidad for p in validas)
+    costo = sum(p.costo_total for p in validas)
     return render_template("producciones.html", items=items, desde=desde, hasta=hasta,
                            unidades=unidades, costo=costo)
 
@@ -931,6 +954,36 @@ def negocio():
     return render_template("negocio.html", neg=neg, ultima=ultima)
 
 
+@app.route("/compras/<int:id>/anular", methods=["POST"])
+@rol_requerido("admin")
+def compra_anular(id):
+    c = db.session.get(CompraInsumo, id) or abort(404)
+    try:
+        anular_compra(c)
+        db.session.commit()
+        flash(f"Compra de {c.cantidad:g} {c.insumo.unidad} de «{c.insumo.nombre}» anulada. "
+              "Se descontó del inventario.", "ok")
+    except ErrorNegocio as e:
+        db.session.rollback()
+        flash(e.errores[0], "error")
+    return redirect(request.referrer or url_for("compras"))
+
+
+@app.route("/produccion/<int:id>/anular", methods=["POST"])
+@rol_requerido("admin")
+def produccion_anular(id):
+    p = db.session.get(Produccion, id) or abort(404)
+    try:
+        anular_produccion(p)
+        db.session.commit()
+        flash(f"Producción #{p.id} anulada: se quitaron {p.cantidad} vikingos y los insumos "
+              "volvieron a la bodega.", "ok")
+    except ErrorNegocio as e:
+        db.session.rollback()
+        flash(e.errores[0], "error")
+    return redirect(url_for("produccion_detalle", id=id))
+
+
 @app.route("/ventas/<int:id>/anular", methods=["POST"])
 @rol_requerido("admin")
 def venta_anular(id):
@@ -999,10 +1052,24 @@ def no_encontrado(e):
 
 
 # ------------------------------------------------------------- arranque BD
+def migrar_columnas():
+    """Agrega columnas nuevas a tablas que ya existían (create_all no lo hace)."""
+    from sqlalchemy import inspect, text
+    nuevas = [("vk_compras", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
+              ("vk_producciones", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
+              ("vk_activos", "proveedor", "VARCHAR(120)")]
+    insp = inspect(db.engine)
+    for tabla, col, tipo in nuevas:
+        if col not in {c["name"] for c in insp.get_columns(tabla)}:
+            with db.engine.begin() as cn:
+                cn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {col} {tipo}"))
+
+
 def inicializar_bd():
     with app.app_context():
         try:
             db.create_all()
+            migrar_columnas()
         except Exception as e:
             print("=" * 70, flush=True)
             print("ERROR: no se pudo conectar a la base de datos (DATABASE_URL).", flush=True)

@@ -2,7 +2,7 @@
 {% block title %}Producción #{{ p.id }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Producción #{{ p.id }} · {{ p.producto.nombre }}</h1>
+  <div><h1>Producción #{{ p.id }} · {{ p.producto.nombre }} {% if p.anulada %}<span class="badge err">Anulada</span>{% endif %}</h1>
     <p>{{ p.fecha|fecha(True) }}{% if p.usuario %} · registró {{ p.usuario.nombre }}{% endif %}</p></div>
   <div class="actions"><a class="btn sec" href="{{ url_for('producciones') }}">← Volver</a>
     <a class="btn" href="{{ url_for('produccion_nueva', producto=p.producto_id) }}">Producir otra vez</a></div>
@@ -55,6 +55,11 @@
     {% set pv = p.producto.precio_venta %}
     <div class="sum-line"><span>Ganancia esperada c/u (precio {{ pv|cop }})</span><b class="{{ 'pos' if pv >= p.costo_unitario else 'neg' }}">{{ (pv - p.costo_unitario)|cop }}</b></div>
     {% if p.nota %}<p class="hint">Nota: {{ p.nota }}</p>{% endif %}
+    {% if puede('admin') and not p.anulada %}
+    <form method="post" action="{{ url_for('produccion_anular', id=p.id) }}" style="margin-top:14px" onsubmit="return confirm('¿Anular esta producción? Se quitarán {{ p.cantidad }} vikingos del inventario y los insumos volverán a la bodega.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Anular producción</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

@@ -213,3 +213,7 @@ label { display: block; font-weight: 700; font-size: .85rem; margin-bottom: 5px;
 
 .brand-logo { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; flex: none; }
 .sum-line b { white-space: nowrap; }
+.seg-tabs { display: inline-flex; border: 1px solid #cfd9e3; border-radius: 10px; overflow: hidden; background: #fff; }
+.seg-tabs a { padding: 9px 16px; font-weight: 700; color: var(--ink); text-decoration: none !important; border-right: 1px solid #cfd9e3; cursor: pointer; }
+.seg-tabs a:last-child { border-right: 0; }
+.seg-tabs a.on { background: var(--nav); color: #fff; cursor: default; }
