@@ -87,7 +87,7 @@ class DatosNegocio(db.Model):
     """Datos que salen en el encabezado de los comprobantes de venta."""
     __tablename__ = "vk_negocio"
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(120), nullable=False, default="Mi negocio de vikingos")
+    nombre = db.Column(db.String(120), nullable=False, default="Vikingos Juanchis")
     nit = db.Column(db.String(40))
     direccion = db.Column(db.String(160))
     ciudad = db.Column(db.String(80))

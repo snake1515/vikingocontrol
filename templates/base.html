@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}">
   <style>
     .overlay { display: none; }
     @media (max-width: 820px) {
@@ -20,12 +21,12 @@
 <input type="checkbox" id="menu-toggle">
 <label for="menu-toggle" class="overlay" aria-hidden="true"></label>
 <header class="topbar">
-  <div class="brand"><span class="brand-mark"></span><div><b>{{ NOMBRE_NEGOCIO }}</b></div></div>
+  <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg') }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b></div></div>
   <label for="menu-toggle" aria-label="Abrir menú">☰</label>
 </header>
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand"><span class="brand-mark"></span><div><b>{{ NOMBRE_NEGOCIO }}</b><small>Producción y ventas</small></div></div>
+    <div class="brand"><img class="brand-logo" src="{{ url_for('static', filename='logo_sm.jpg') }}" alt=""><div><b>{{ NOMBRE_NEGOCIO }}</b><small>Producción y ventas</small></div></div>
     <nav class="nav">
       {% if puede('admin') %}
       <a href="{{ url_for('inicio') }}" class="{{ 'on' if ep == 'inicio' }}"><span class="ico">◧</span>Resumen</a>

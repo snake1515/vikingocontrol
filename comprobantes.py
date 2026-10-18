@@ -16,6 +16,8 @@ from reportlab.pdfgen import canvas
 FONT_DIR = os.path.join(os.path.dirname(__file__), "static", "fonts")
 F_REG = os.path.join(FONT_DIR, "DejaVuSans.ttf")
 F_BOLD = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
+LOGO = os.path.join(os.path.dirname(__file__), "static", "logo.jpg")
+HAY_LOGO = os.path.exists(LOGO)
 pdfmetrics.registerFont(TTFont("DV", F_REG))
 pdfmetrics.registerFont(TTFont("DVB", F_BOLD))
 
@@ -67,15 +69,22 @@ def pdf(venta, negocio):
     # Encabezado
     c.setFillColor(HexColor(ACENTO))
     c.rect(0, H - 8 * mm, W, 8 * mm, stroke=0, fill=1)
+    xt = x0
+    if HAY_LOGO:
+        lw = 30 * mm
+        c.drawImage(LOGO, x0, y - 24 * mm, width=lw, height=lw * 769 / 800, mask=None)
+        xt = x0 + lw + 5 * mm
     c.setFillColor(HexColor(TINTA))
     c.setFont("DVB", 18)
-    c.drawString(x0, y, d["negocio"])
+    c.drawString(xt, y - 2 * mm, d["negocio"])
     c.setFont("DV", 9.5)
     c.setFillColor(HexColor(GRIS))
-    yy = y - 6 * mm
+    yy = y - 8 * mm
     for ln in d["lineas_neg"]:
-        c.drawString(x0, yy, ln)
+        c.drawString(xt, yy, ln)
         yy -= 4.6 * mm
+    if HAY_LOGO:
+        yy = min(yy, y - 26 * mm)
     c.setFillColor(HexColor(TINTA))
     c.setFont("DVB", 12)
     c.drawRightString(x1, y, "COMPROBANTE DE VENTA")
@@ -201,12 +210,18 @@ def jpg(venta, negocio):
 
     # Alto según el contenido
     alto_items = sum(46 * len(cortar(it["nombre"], F["item"], W - 2 * M - 300)) + 74 for it in d["items"])
-    H = 640 + 44 * len(d["lineas_neg"]) + alto_items + 360 + (60 if d["nota"] else 0)
+    LOGO_W = 380
+    H = 640 + (LOGO_W * 769 // 800 + 30 if HAY_LOGO else 0) + 44 * len(d["lineas_neg"]) + alto_items + 280 + (60 if d["nota"] else 0)
     img = Image.new("RGB", (W, H), "white")
     g = ImageDraw.Draw(img)
 
     g.rectangle([0, 0, W, 18], fill=ACENTO)
     y = 70
+    if HAY_LOGO:
+        lg = Image.open(LOGO).convert("RGB")
+        lg = lg.resize((LOGO_W, LOGO_W * lg.height // lg.width), Image.LANCZOS)
+        img.paste(lg, ((W - LOGO_W) // 2, 50))
+        y = 50 + lg.height + 30
     for ln in cortar(d["negocio"], F["neg"], W - 2 * M):
         g.text((W / 2, y), ln, font=F["neg"], fill=TINTA, anchor="mt")
         y += 64

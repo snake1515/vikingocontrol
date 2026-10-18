@@ -126,8 +126,15 @@ def verificar_csrf():
 def contexto():
     def puede(*roles):
         return current_user.is_authenticated and current_user.rol in roles
+    nombre = NOMBRE_NEGOCIO
+    try:
+        neg = db.session.get(DatosNegocio, 1)
+        if neg and neg.nombre and neg.nombre != "Mi negocio de vikingos":
+            nombre = neg.nombre
+    except Exception:
+        db.session.rollback()
     return dict(csrf_token=csrf_token, puede=puede, ROLES=ROLES,
-                NOMBRE_NEGOCIO=NOMBRE_NEGOCIO, hoy=ahora().date().isoformat())
+                NOMBRE_NEGOCIO=nombre, hoy=ahora().date().isoformat())
 
 
 @app.template_filter("cop")
