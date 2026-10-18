@@ -22,25 +22,30 @@
   </form>
 </div>
 
-<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+<div class="kpis">
   <div class="kpi"><div class="lbl">Ventas del periodo</div><div class="val">{{ tot.ventas|cop }}</div></div>
   <div class="kpi"><div class="lbl">Costo de lo vendido</div><div class="val">{{ tot.costo|cop }}</div><div class="sub">Lo que hay que reponer para seguir produciendo</div></div>
-  <div class="kpi"><div class="lbl">Ganancia</div><div class="val {{ 'pos' if tot.ganancia >= 0 else 'neg' }}">{{ tot.ganancia|cop }}</div></div>
+  <div class="kpi"><div class="lbl">Equipos + gastos</div><div class="val">{{ (tot.equipos + tot.gastos)|cop }}</div><div class="sub"><a href="{{ url_for('activos') }}">Equipos</a> {{ tot.equipos|cop }} · <a href="{{ url_for('gastos') }}">Gastos</a> {{ tot.gastos|cop }}</div></div>
+  <div class="kpi hl"><div class="lbl">Ganancia neta</div><div class="val {{ 'pos' if tot.neta >= 0 else 'neg' }}">{{ tot.neta|cop }}</div><div class="sub">Ganancia {{ tot.ganancia|cop }} − equipos − gastos</div></div>
 </div>
 
 <div class="bolsas">
   <div class="bolsa b-re"><div class="pct">Reinversión · {{ cfg.pct_reinversion|num(1) }}%</div><div class="val">{{ tot.reinversion|cop }}</div>
-    <div class="hint">{{ 'Además se separan ' ~ (tot.reponer|cop) ~ ' para reponer el costo' if cfg.base == 'ganancia' else 'Para comprar insumos y producir' }}</div></div>
+    <div class="hint">{{ 'Además se separan ' ~ (tot.reponer|cop) ~ ' para reponer el costo y ' ~ ((tot.equipos + tot.gastos)|cop) ~ ' para equipos y gastos' if cfg.base == 'ganancia' else 'Para insumos, producción, equipos y gastos' }}</div></div>
   <div class="bolsa b-du"><div class="pct">Para el dueño · {{ cfg.pct_dueno|num(1) }}%</div><div class="val">{{ tot.dueno|cop }}</div></div>
   <div class="bolsa b-em"><div class="pct">Fondo de emergencia · {{ cfg.pct_emergencia|num(1) }}%</div><div class="val">{{ tot.emergencia|cop }}</div></div>
 </div>
 
 {% if tot.faltante > 0.5 %}
 <div class="note warn" style="margin-bottom:16px">
-  <b>Atención:</b> la reinversión ({{ tot.reinversion|cop }}) no alcanza a cubrir lo que costó producir lo vendido ({{ tot.costo|cop }}).
-  Faltan <b>{{ tot.faltante|cop }}</b> para reponer insumos, mano de obra e indirectos. Con esta regla el negocio se descapitaliza.
-  Opciones: subir el porcentaje de reinversión a mínimo <b>{{ ((tot.costo / tot.ventas * 100) if tot.ventas else 0)|round(0, 'ceil')|int }}%</b>,
+  {% if cfg.base == 'ventas' %}
+  <b>Atención:</b> la reinversión ({{ tot.reinversion|cop }}) no alcanza a cubrir lo que costó producir lo vendido ({{ tot.costo|cop }}){% if tot.equipos + tot.gastos > 0.5 %} más equipos y gastos ({{ (tot.equipos + tot.gastos)|cop }}){% endif %}.
+  Faltan <b>{{ tot.faltante|cop }}</b>. Con esta regla el negocio se descapitaliza.
+  Opciones: subir el porcentaje de reinversión a mínimo <b>{{ (((tot.costo + tot.equipos + tot.gastos) / tot.ventas * 100) if tot.ventas else 0)|round(0, 'ceil')|int }}%</b>,
   subir precios, o <a href="{{ url_for('configuracion') }}">calcular la regla sobre la ganancia</a>.
+  {% else %}
+  <b>Atención:</b> la ganancia del periodo no alcanza a cubrir los equipos y los gastos. Faltan <b>{{ tot.faltante|cop }}</b>.
+  {% endif %}
 </div>
 {% endif %}
 
@@ -48,28 +53,30 @@
   <div class="card-head"><h2>Día por día</h2>
     <small><span class="dot" style="background:var(--accent)"></span>Reinversión <span class="dot" style="background:var(--berry);margin-left:8px"></span>Dueño <span class="dot" style="background:var(--warn);margin-left:8px"></span>Emergencia</small></div>
   <div class="table-wrap"><table>
-    <thead><tr><th>Día</th><th class="num">Ventas</th><th class="num">Costo</th><th class="num">Ganancia</th>
+    <thead><tr><th>Día</th><th class="num">Ventas</th><th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Equipos</th><th class="num">Gastos</th>
       <th class="num">Reinversión</th><th class="num">Dueño</th><th class="num">Emergencia</th><th></th></tr></thead>
     <tbody>
     {% for f in filas %}
       <tr>
-        <td>{{ f.fecha.strftime('%d/%m/%Y') }}<br><small>{{ f.num }} venta{{ 's' if f.num != 1 }}</small></td>
+        <td>{{ f.fecha.strftime('%d/%m/%Y') }}<br><small>{{ (f.num ~ ' venta' ~ ('s' if f.num != 1 else '')) if f.num else 'Sin ventas' }}</small></td>
         <td class="num">{{ f.ventas|cop }}</td>
         <td class="num">{{ f.costo|cop }}</td>
         <td class="num {{ 'pos' if f.ganancia >= 0 else 'neg' }}">{{ f.ganancia|cop }}</td>
+        <td class="num muted">{{ f.equipos|cop }}</td>
+        <td class="num muted">{{ f.gastos|cop if f.gastos else '—' }}</td>
         <td class="num"><b>{{ f.reinversion|cop }}</b></td>
         <td class="num"><b>{{ f.dueno|cop }}</b></td>
         <td class="num"><b>{{ f.emergencia|cop }}</b></td>
-        <td>{% if f.faltante > 0.5 %}<span class="badge warn" title="La reinversión no cubre el costo">−{{ f.faltante|cop }}</span>{% endif %}</td>
+        <td>{% if f.faltante > 0.5 %}<span class="badge warn" title="Faltó para cubrir costo y equipos">−{{ f.faltante|cop }}</span>{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="8" class="empty">No hay ventas en este periodo.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="10" class="empty">No hay ventas en este periodo.</td></tr>{% endfor %}
     </tbody>
-    {% if filas %}<tfoot><tr><td>Total</td><td class="num">{{ tot.ventas|cop }}</td><td class="num">{{ tot.costo|cop }}</td><td class="num">{{ tot.ganancia|cop }}</td>
+    {% if filas %}<tfoot><tr><td>Total</td><td class="num">{{ tot.ventas|cop }}</td><td class="num">{{ tot.costo|cop }}</td><td class="num">{{ tot.ganancia|cop }}</td><td class="num">{{ tot.equipos|cop }}</td><td class="num">{{ tot.gastos|cop }}</td>
       <td class="num">{{ tot.reinversion|cop }}</td><td class="num">{{ tot.dueno|cop }}</td><td class="num">{{ tot.emergencia|cop }}</td><td></td></tr></tfoot>{% endif %}
   </table></div>
   <p class="hint" style="margin-top:10px">
-  {% if cfg.base == 'ventas' %}Cada día se reparte el total vendido. La etiqueta amarilla indica cuánto faltó ese día para reponer el costo.
-  {% else %}Cada día primero se separa el costo de lo vendido (para reponer) y la ganancia se reparte con la regla. Los días con pérdida no reparten nada.{% endif %}
+  {% if cfg.base == 'ventas' %}Cada día se reparte el total vendido. La reinversión debe cubrir el costo de lo vendido, la reserva diaria para equipos y los gastos del día; la etiqueta amarilla indica cuánto faltó.
+  {% else %}Cada día primero se separa el costo de lo vendido (para reponer), la reserva para equipos y los gastos del día; lo que queda de ganancia se reparte con la regla. Los días sin ventas también cargan la reserva de equipos.{% endif %}
   </p>
 </div>
 {% endblock %}

@@ -13,7 +13,7 @@
 <div class="kpis">
   <div class="kpi"><div class="lbl">Ventas</div><div class="val">{{ ingresos|cop }}</div><div class="sub">{{ num_ventas }} ventas · {{ unidades_vendidas|num }} vikingos</div></div>
   <div class="kpi"><div class="lbl">Costo de lo vendido</div><div class="val">{{ costo_vendido|cop }}</div><div class="sub">Insumos + mano de obra + indirectos</div></div>
-  <div class="kpi hl"><div class="lbl">Ganancia</div><div class="val {{ 'pos' if ganancia >= 0 else 'neg' }}">{{ ganancia|cop }}</div><div class="sub">Margen {{ margen|num(1) }}%</div></div>
+  <div class="kpi hl"><div class="lbl">Ganancia neta</div><div class="val {{ 'pos' if ganancia_neta >= 0 else 'neg' }}">{{ ganancia_neta|cop }}</div><div class="sub">Bruta {{ ganancia|cop }} (margen {{ margen|num(1) }}%){% if depreciacion > 0.5 %} − equipos {{ depreciacion|cop }}{% endif %}{% if gastos_tot > 0.5 %} − gastos {{ gastos_tot|cop }}{% endif %}</div></div>
   <div class="kpi"><div class="lbl">Producción</div><div class="val">{{ unidades_prod|num }} <small style="font-size:.9rem">vikingos</small></div><div class="sub">Costo prom. {{ costo_unit_prod|cop }} c/u</div></div>
 </div>
 
@@ -53,6 +53,8 @@
         <div class="sum-line"><span>{{ k }}</span><b>{{ v|cop }}</b></div>
         <div class="bar" style="margin:-2px 0 4px"><span style="width:{{ ((v / costo_prod * 100) if costo_prod else 0)|round(1) }}%"></span></div>
       {% endfor %}
+      <div class="sum-line" style="margin-top:8px;border-top:1px solid var(--line)"><span>Depreciación de equipos<br><small><a href="{{ url_for('activos') }}">Ver equipos</a></small></span><b>{{ depreciacion|cop }}</b></div>
+      <div class="sum-line"><span>Gastos del negocio<br><small>{% for c, v in gastos_det[:3] %}{{ c }}{{ ', ' if not loop.last }}{% else %}Publicidad, arriendo…{% endfor %} · <a href="{{ url_for('gastos') }}">Ver gastos</a></small></span><b>{{ gastos_tot|cop }}</b></div>
       <p class="hint" style="margin-top:10px">Compras de insumos en el periodo: <b>{{ compras|cop }}</b></p>
     </div>
 

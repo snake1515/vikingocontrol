@@ -44,6 +44,10 @@
       <a href="{{ url_for('compras') }}" class="{{ 'on' if ep.startswith('compra') }}"><span class="ico">⇣</span>Compras</a>
       {% endif %}
       {% if puede('admin') %}
+      <a href="{{ url_for('gastos') }}" class="{{ 'on' if ep.startswith('gasto') }}"><span class="ico">✎</span>Gastos</a>
+      <a href="{{ url_for('activos') }}" class="{{ 'on' if ep.startswith('activo') }}"><span class="ico">⚒</span>Equipos (activos)</a>
+      {% endif %}
+      {% if puede('admin') %}
       <div class="nav-sep"></div>
       <a href="{{ url_for('usuarios') }}" class="{{ 'on' if ep.startswith('usuario') }}"><span class="ico">☺</span>Usuarios</a>
       <a href="{{ url_for('negocio') }}" class="{{ 'on' if ep == 'negocio' }}"><span class="ico">⌂</span>Datos del negocio</a>

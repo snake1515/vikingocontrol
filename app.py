@@ -12,11 +12,13 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
-from models import (METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, CompraInsumo,
+from models import (CATEGORIAS_GASTO, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
+                    CompraInsumo, Gasto,
                     Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
                     VentaItem, ahora, db)
 import comprobantes
+from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
 from services import (ErrorNegocio, anular_venta, registrar_compra,
                       registrar_produccion, registrar_venta)
 
@@ -93,6 +95,13 @@ def periodo():
     ini = datetime.combine(desde, datetime.min.time())
     fin = datetime.combine(hasta + timedelta(days=1), datetime.min.time())
     return ini, fin, desde.isoformat(), hasta.isoformat()
+
+
+def gastos_por_dia(desde, hasta):
+    """dict date -> total de gastos, entre fechas date (inclusive)."""
+    filas = (db.session.query(Gasto.fecha, func.sum(Gasto.valor))
+             .filter(Gasto.fecha >= desde, Gasto.fecha <= hasta).group_by(Gasto.fecha).all())
+    return {f: v or 0 for f, v in filas}
 
 
 def rol_requerido(*roles):
@@ -268,11 +277,22 @@ def inicio():
         ganancia=[round(por_dia[x.isoformat()][1]) for x in dias],
     )
 
+    hoy_d = ahora().date()
+    hasta_dep = min((fin - timedelta(days=1)).date(), hoy_d)
+    depreciacion = depreciacion_periodo(ini.date(), hasta_dep) if hasta_dep >= ini.date() else 0
+    gastos_det = (db.session.query(Gasto.categoria, func.sum(Gasto.valor))
+                  .filter(Gasto.fecha >= ini.date(), Gasto.fecha < fin.date())
+                  .group_by(Gasto.categoria).order_by(func.sum(Gasto.valor).desc()).all())
+    gastos_tot = sum(v or 0 for _, v in gastos_det)
+    ganancia_neta = ganancia - depreciacion - gastos_tot
+
     insumos = Insumo.query.filter_by(activo=True).all()
     productos = Producto.query.filter_by(activo=True).order_by(Producto.nombre).all()
     return render_template(
         "dashboard.html", desde=desde, hasta=hasta, ingresos=ingresos,
         costo_vendido=costo_vendido, ganancia=ganancia,
+        depreciacion=depreciacion, ganancia_neta=ganancia_neta,
+        gastos_det=gastos_det, gastos_tot=gastos_tot,
         margen=(ganancia / ingresos * 100) if ingresos else 0,
         unidades_vendidas=unidades_vendidas, num_ventas=len(ventas),
         unidades_prod=unidades_prod, costo_prod=costo_prod, desglose=desglose,
@@ -302,24 +322,40 @@ def distribucion():
         d["num"] += 1
     pct = dict(reinversion=cfg.pct_reinversion, dueno=cfg.pct_dueno,
                emergencia=cfg.pct_emergencia)
+    activos = activos_vigentes()
 
-    def repartir(ventas_, costo_):
+    gastos_dia = gastos_por_dia(ini.date(), (fin - timedelta(days=1)).date())
+
+    def repartir(ventas_, costo_, equipos_, gastos_=0.0):
         ganancia = ventas_ - costo_
-        base = ventas_ if cfg.base == "ventas" else max(ganancia, 0)
+        fijos = equipos_ + gastos_
+        if cfg.base == "ventas":
+            base = ventas_
+        else:
+            # Primero se repone el costo y se reserva lo de los equipos; se reparte el resto.
+            base = max(ganancia - fijos, 0)
         r = {k: base * p / 100 for k, p in pct.items()}
-        r.update(ventas=ventas_, costo=costo_, ganancia=ganancia, base=base)
-        # Con base "ganancia", la reposición del costo va aparte y siempre queda cubierta.
+        r.update(ventas=ventas_, costo=costo_, ganancia=ganancia, base=base, equipos=equipos_,
+                 gastos=gastos_, neta=ganancia - fijos)
         r["reponer"] = costo_ if cfg.base == "ganancia" else 0
-        r["faltante"] = max(costo_ - r["reinversion"], 0) if cfg.base == "ventas" else 0
+        r["faltante"] = (max(costo_ + fijos - r["reinversion"], 0)
+                         if cfg.base == "ventas" else max(fijos - max(ganancia, 0), 0))
         return r
 
+    hoy_d = ahora().date()
     filas = []
-    for dia in sorted(por_dia, reverse=True):
-        d = por_dia[dia]
-        f = repartir(d["ventas"], d["costo"])
-        f.update(fecha=dia, num=d["num"])
-        filas.append(f)
-    tot = repartir(sum(v.total for v in ventas), sum(v.costo_total for v in ventas))
+    dia = min((fin - timedelta(days=1)).date(), hoy_d)
+    while dia >= ini.date():
+        d = por_dia.get(dia, {"ventas": 0.0, "costo": 0.0, "num": 0})
+        eq = depreciacion_dia(dia, activos)
+        gd = gastos_dia.get(dia, 0)
+        if d["num"] or eq > 0.005 or gd:
+            f = repartir(d["ventas"], d["costo"], eq, gd)
+            f.update(fecha=dia, num=d["num"])
+            filas.append(f)
+        dia -= timedelta(days=1)
+    tot = repartir(sum(f["ventas"] for f in filas), sum(f["costo"] for f in filas),
+                   sum(f["equipos"] for f in filas), sum(f["gastos"] for f in filas))
     return render_template("distribucion.html", cfg=cfg, filas=filas, tot=tot,
                            desde=desde, hasta=hasta)
 
@@ -343,6 +379,167 @@ def configuracion():
             flash("Regla de distribución guardada.", "ok")
             return redirect(url_for("distribucion"))
     return render_template("configuracion.html", cfg=cfg)
+
+
+# ------------------------------------------------------------------ activos
+@app.route("/activos")
+@rol_requerido("admin")
+def activos():
+    hoy_d = ahora().date()
+    items = Activo.query.filter_by(eliminado=False).order_by(Activo.fecha_baja.isnot(None),
+                                                               Activo.fecha_compra.desc()).all()
+    filas = []
+    for a in items:
+        acum = a.acumulada(hoy_d)
+        meses_rest = 0
+        if a.estado(hoy_d) == "vigente":
+            meses_rest = max((a.fin_vida - hoy_d).days, 0) / (365 / 12)
+        filas.append(dict(a=a, acum=acum, pendiente=a.depreciable - acum,
+                          pct=(acum / a.depreciable * 100) if a.depreciable else 100,
+                          estado=a.estado(hoy_d), meses_rest=meses_rest))
+    vig = [f for f in filas if f["estado"] == "vigente"]
+    inicio_mes = hoy_d.replace(day=1)
+    return render_template(
+        "activos.html", filas=filas, hoy=hoy_d.isoformat(),
+        total_valor=sum(f["a"].valor for f in filas if f["estado"] != "baja"),
+        total_pendiente=sum(f["pendiente"] for f in vig),
+        cuota_mes=sum(f["a"].cuota_mensual for f in vig),
+        dep_mes=depreciacion_periodo(inicio_mes, hoy_d, [f["a"] for f in filas]))
+
+
+def _fecha(txt, defecto=None):
+    try:
+        return datetime.strptime(txt or "", "%Y-%m-%d").date()
+    except ValueError:
+        return defecto
+
+
+@app.route("/activos/nuevo", methods=["GET", "POST"])
+@app.route("/activos/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin")
+def activo_form(id=None):
+    a = db.session.get(Activo, id) if id else None
+    if id and (not a or a.eliminado):
+        abort(404)
+    if request.method == "POST":
+        f = request.form
+        nombre = f.get("nombre", "").strip()
+        valor, residual = n(f.get("valor")), n(f.get("valor_residual"))
+        vida = int(n(f.get("vida_util_meses")))
+        fecha = _fecha(f.get("fecha_compra"))
+        errores = []
+        if not nombre:
+            errores.append("Escribe el nombre del equipo.")
+        if not fecha:
+            errores.append("Indica la fecha de compra.")
+        elif fecha > ahora().date():
+            errores.append("La fecha de compra no puede ser futura.")
+        if valor <= 0:
+            errores.append("El valor de compra debe ser mayor a 0.")
+        if residual < 0 or residual >= valor > 0:
+            errores.append("El valor residual debe ser menor que el valor de compra.")
+        if vida < 1:
+            errores.append("La vida útil debe ser de al menos 1 mes.")
+        if errores:
+            for m in errores:
+                flash(m, "error")
+        else:
+            if not a:
+                a = Activo()
+                db.session.add(a)
+            a.nombre, a.fecha_compra, a.valor = nombre[:120], fecha, valor
+            a.valor_residual, a.vida_util_meses = residual, vida
+            a.descripcion = f.get("descripcion", "").strip()[:255] or None
+            db.session.commit()
+            flash(f"Equipo «{nombre}» guardado.", "ok")
+            return redirect(url_for("activos"))
+    return render_template("activo_form.html", a=a)
+
+
+@app.route("/activos/<int:id>/baja", methods=["POST"])
+@rol_requerido("admin")
+def activo_baja(id):
+    a = db.session.get(Activo, id) or abort(404)
+    if request.form.get("deshacer"):
+        a.fecha_baja, a.motivo_baja = None, None
+        flash(f"«{a.nombre}» vuelve a estar en uso.", "ok")
+    else:
+        a.fecha_baja = _fecha(request.form.get("fecha_baja"), ahora().date())
+        a.motivo_baja = request.form.get("motivo", "").strip()[:255] or None
+        flash(f"«{a.nombre}» dado de baja. Deja de depreciarse desde esa fecha.", "ok")
+    db.session.commit()
+    return redirect(url_for("activos"))
+
+
+@app.route("/activos/<int:id>/eliminar", methods=["POST"])
+@rol_requerido("admin")
+def activo_eliminar(id):
+    a = db.session.get(Activo, id) or abort(404)
+    a.eliminado = True
+    db.session.commit()
+    flash(f"«{a.nombre}» eliminado (registrado por error).", "ok")
+    return redirect(url_for("activos"))
+
+
+# ------------------------------------------------------------------- gastos
+@app.route("/gastos")
+@rol_requerido("admin")
+def gastos():
+    ini, fin, desde, hasta = periodo()
+    cat = request.args.get("categoria", "")
+    q = Gasto.query.filter(Gasto.fecha >= ini.date(), Gasto.fecha < fin.date())
+    if cat:
+        q = q.filter(Gasto.categoria == cat)
+    items = q.order_by(Gasto.fecha.desc(), Gasto.id.desc()).all()
+    por_cat = defaultdict(float)
+    for g in items:
+        por_cat[g.categoria] += g.valor
+    por_cat = sorted(por_cat.items(), key=lambda x: -x[1])
+    return render_template("gastos.html", items=items, desde=desde, hasta=hasta, cat=cat,
+                           categorias=CATEGORIAS_GASTO, por_cat=por_cat,
+                           total=sum(g.valor for g in items))
+
+
+@app.route("/gastos/nuevo", methods=["GET", "POST"])
+@app.route("/gastos/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin")
+def gasto_form(id=None):
+    g = db.session.get(Gasto, id) if id else None
+    if id and not g:
+        abort(404)
+    if request.method == "POST":
+        f = request.form
+        valor = n(f.get("valor"))
+        fecha = _fecha(f.get("fecha"))
+        cat = f.get("categoria", "Otros")
+        desc = f.get("descripcion", "").strip()
+        if valor <= 0:
+            flash("El valor debe ser mayor a 0.", "error")
+        elif not fecha:
+            flash("Indica la fecha del gasto.", "error")
+        elif cat not in CATEGORIAS_GASTO:
+            flash("Categoría no válida.", "error")
+        elif cat == "Otros" and not desc:
+            flash("Describe en qué consiste el gasto «Otros».", "error")
+        else:
+            if not g:
+                g = Gasto(usuario_id=current_user.id)
+                db.session.add(g)
+            g.fecha, g.categoria, g.valor, g.descripcion = fecha, cat, valor, desc[:255] or None
+            db.session.commit()
+            flash(f"Gasto de {filtro_cop(valor)} en {cat} guardado.", "ok")
+            return redirect(url_for("gastos"))
+    return render_template("gasto_form.html", g=g, categorias=CATEGORIAS_GASTO)
+
+
+@app.route("/gastos/<int:id>/eliminar", methods=["POST"])
+@rol_requerido("admin")
+def gasto_eliminar(id):
+    g = db.session.get(Gasto, id) or abort(404)
+    db.session.delete(g)
+    db.session.commit()
+    flash("Gasto eliminado.", "ok")
+    return redirect(url_for("gastos"))
 
 
 # ---------------------------------------------------------------- insumos

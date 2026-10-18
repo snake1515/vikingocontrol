@@ -284,3 +284,71 @@ class VentaItem(db.Model):
 
     venta = db.relationship("Venta", back_populates="items")
     producto = db.relationship("Producto")
+
+
+class Activo(db.Model):
+    """Equipos y herramientas (selladora, congelador, ollas…). Se deprecian en línea recta."""
+    __tablename__ = "vk_activos"
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    descripcion = db.Column(db.String(255))
+    fecha_compra = db.Column(db.Date, nullable=False)
+    valor = db.Column(db.Float, nullable=False)
+    valor_residual = db.Column(db.Float, nullable=False, default=0)
+    vida_util_meses = db.Column(db.Integer, nullable=False)
+    fecha_baja = db.Column(db.Date)
+    motivo_baja = db.Column(db.String(255))
+    eliminado = db.Column(db.Boolean, nullable=False, default=False)
+
+    # --- cálculos (línea recta, prorrateo diario) ---
+    @property
+    def depreciable(self):
+        return max((self.valor or 0) - (self.valor_residual or 0), 0)
+
+    @property
+    def cuota_mensual(self):
+        return self.depreciable / self.vida_util_meses if self.vida_util_meses else 0
+
+    @property
+    def cuota_diaria(self):
+        return self.cuota_mensual * 12 / 365
+
+    @property
+    def fin_vida(self):
+        from datetime import timedelta
+        return self.fecha_compra + timedelta(days=round(self.vida_util_meses * 365 / 12))
+
+    def depreciacion_entre(self, desde, hasta):
+        """Depreciación de los días [desde, hasta) — fechas date."""
+        ini = max(desde, self.fecha_compra)
+        fin = min(hasta, self.fin_vida, self.fecha_baja or hasta)
+        dias = (fin - ini).days
+        return max(dias, 0) * self.cuota_diaria
+
+    def acumulada(self, hoy):
+        from datetime import timedelta
+        return min(self.depreciacion_entre(self.fecha_compra, hoy + timedelta(days=1)), self.depreciable)
+
+    def estado(self, hoy):
+        if self.fecha_baja:
+            return "baja"
+        if hoy >= self.fin_vida:
+            return "recuperado"
+        return "vigente"
+
+
+CATEGORIAS_GASTO = ["Publicidad", "Arriendo", "Servicios públicos", "Internet / celular",
+                    "Transporte", "Mantenimiento de equipos", "Impuestos y trámites",
+                    "Papelería y empaques", "Otros"]
+
+
+class Gasto(db.Model):
+    """Gastos del negocio que no son insumos ni equipos: publicidad, arriendo, servicios…"""
+    __tablename__ = "vk_gastos"
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.Date, nullable=False, index=True)
+    categoria = db.Column(db.String(60), nullable=False, default="Otros")
+    descripcion = db.Column(db.String(255))
+    valor = db.Column(db.Float, nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    usuario = db.relationship("Usuario")

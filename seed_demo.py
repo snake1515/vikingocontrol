@@ -7,7 +7,7 @@ import random
 from datetime import timedelta
 
 from app import app
-from models import Insumo, Producto, RecetaItem, Usuario, ahora, db
+from models import Activo, Gasto, Insumo, Producto, RecetaItem, Usuario, ahora, db
 from services import registrar_compra, registrar_produccion, registrar_venta
 
 random.seed(7)
@@ -115,5 +115,18 @@ with app.app_context():
         if i.stock < objetivo:
             registrar_compra(i, round(objetivo - i.stock, 2), round((objetivo - i.stock) * i.costo_promedio),
                              "Distribuidora La Frontera", "Reposición", ahora(), marta.id)
+    db.session.commit()
+    hoy = ahora().date()
+    for nombre, valor, meses, dias in (("Selladora de impulso 30 cm", 350000, 24, 40),
+                                       ("Congelador horizontal 300 L", 1800000, 60, 200),
+                                       ("Ollas y utensilios", 180000, 36, 90)):
+        db.session.add(Activo(nombre=nombre, valor=valor, vida_util_meses=meses,
+                              fecha_compra=hoy - timedelta(days=dias)))
+    for dias, cat, desc, valor in ((25, "Publicidad", "Pauta Facebook e Instagram", 60000),
+                                   (18, "Publicidad", "Volantes 500 unidades", 35000),
+                                   (12, "Servicios públicos", "Recibo de luz (parte del negocio)", 45000),
+                                   (5, "Publicidad", "Pauta Instagram semana", 40000),
+                                   (3, "Papelería y empaques", "Bolsas para domicilio", 15000)):
+        db.session.add(Gasto(fecha=hoy - timedelta(days=dias), categoria=cat, descripcion=desc, valor=valor))
     db.session.commit()
     print("Datos demo cargados. Usuarios: admin / marta / julian (clave demo: demo123 para marta y julian).")
