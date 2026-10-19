@@ -122,22 +122,27 @@ with app.app_context():
     db.session.add(maizena)
     registrar_compra(maizena, 5, 42500, "Distribuidora La Frontera", "Compra inicial",
                      ahora() - timedelta(days=6), admin.id)
-    base = Insumo(nombre="Base de maíz", unidad="litro", stock_minimo=3, es_preparacion=True)
-    base.receta_prep.append(PrepRecetaItem(componente=maizena, cantidad=0.06))
-    base.receta_prep.append(PrepRecetaItem(componente=ins["Leche entera"], cantidad=0.9))
-    base.receta_prep.append(PrepRecetaItem(componente=ins["Azúcar"], cantidad=0.08))
+    # Tanda estándar: 375 g de maizena + 1.500 ml de leche → 3 kg de base
+    base = Insumo(nombre="Base de maíz", unidad="kilogramo", stock_minimo=0.5, es_preparacion=True,
+                  tanda_rinde=3)
+    base.receta_prep.append(PrepRecetaItem(componente=maizena, cantidad=0.375 / 3, unidad="gramo"))
+    base.receta_prep.append(PrepRecetaItem(componente=ins["Leche entera"], cantidad=1.5 / 3,
+                                           unidad="mililitro"))
     db.session.add(base)
     db.session.flush()
-    registrar_preparacion(base, 10, {r.componente: r.cantidad * 10 for r in base.receta_prep},
-                          mano_obra=5000, otros=2000, otros_descripcion="Gas de la cocción",
+    registrar_preparacion(base, 3, {maizena: 0.375, ins["Leche entera"]: 1.5},
+                          mano_obra=3000, otros=1500, otros_descripcion="Gas de la cocción",
                           fecha=ahora() - timedelta(days=5), usuario_id=marta.id)
-    maiz = Producto(nombre="Vikingo de maíz", precio_venta=1500, stock_minimo=20)
-    maiz.receta.append(RecetaItem(insumo=ins["Bolsas para vikingo"], cantidad=1))
-    maiz.receta.append(RecetaItem(insumo=base, cantidad=0.09))
+    # Una tanda de 15 vikingos de maíz lleva 200 g de base y 15 bolsas
+    maiz = Producto(nombre="Vikingo de maíz", precio_venta=1500, stock_minimo=20, tanda_rinde=15)
+    maiz.receta.append(RecetaItem(insumo=ins["Bolsas para vikingo"], cantidad=1, unidad="unidad"))
+    maiz.receta.append(RecetaItem(insumo=base, cantidad=0.2 / 15, unidad="gramo"))
+    maiz.receta.append(RecetaItem(insumo=ins["Leche entera"], cantidad=0.06, unidad="mililitro"))
     db.session.add(maiz)
     db.session.flush()
-    registrar_produccion(maiz, 60, {ins["Bolsas para vikingo"]: 60, base: 5.4}, mo_tipo="unidad",
-                         mo_valor=100, energia=2000, fecha=ahora() - timedelta(days=4), usuario_id=marta.id)
+    registrar_produccion(maiz, 45, {ins["Bolsas para vikingo"]: 45, base: 0.6, ins["Leche entera"]: 2.7},
+                         mo_tipo="unidad", mo_valor=100, energia=2000,
+                         fecha=ahora() - timedelta(days=4), usuario_id=marta.id)
     db.session.commit()
 
     hoy = ahora().date()

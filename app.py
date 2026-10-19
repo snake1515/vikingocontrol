@@ -19,6 +19,7 @@ from models import (CATEGORIAS_GASTO, Preparacion, PrepRecetaItem, METODOS_PAGO,
                     VentaItem, ahora, db)
 import comprobantes
 import reportes as rpt
+from unidades import ABREV, compatibles, convertir, unidad_valida
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
 from services import (ErrorNegocio, anular_compra, anular_preparacion, anular_produccion,
                       anular_venta, registrar_preparacion, registrar_compra,
@@ -189,6 +190,42 @@ def filtro_fecha(v, hora=False):
     if not v:
         return ""
     return v.strftime("%d/%m/%Y %I:%M %p" if hora else "%d/%m/%Y")
+
+
+def leer_lineas(ids, cants, unidades, divisor=1.0):
+    """Filas de receta/consumo del formulario → {Insumo: (cantidad en su unidad, unidad escrita)}."""
+    out = {}
+    unidades = list(unidades) + [""] * (len(ids) - len(unidades))
+    for iid, c, u in zip(ids, cants, unidades):
+        if not iid or n(c) <= 0:
+            continue
+        ins = db.session.get(Insumo, int(iid))
+        if not ins:
+            continue
+        u = unidad_valida(u, ins.unidad)
+        base = convertir(n(c), u, ins.unidad) / (divisor or 1)
+        prev = out.get(ins, (0, u))[0]
+        out[ins] = (prev + base, u)
+    return out
+
+
+def receta_json(items, rinde=1.0, attr="insumo"):
+    """Receta guardada → filas para el formulario, en la unidad y la tanda en que se escribió."""
+    filas = []
+    for r in items:
+        ins = getattr(r, attr)
+        u = unidad_valida(r.unidad, ins.unidad)
+        filas.append(dict(insumo_id=ins.id, unidad=u, base=r.cantidad,
+                          cantidad=round(convertir(r.cantidad * (rinde or 1), ins.unidad, u), 6)))
+    return filas
+
+
+@app.template_filter("cant_receta")
+def filtro_cant_receta(r, attr="insumo", rinde=1.0):
+    """Muestra la cantidad de una línea de receta en su unidad escrita (ej. '200 g')."""
+    ins = getattr(r, attr)
+    u = unidad_valida(r.unidad, ins.unidad)
+    return f"{filtro_num(convertir(r.cantidad * (rinde or 1), ins.unidad, u), 4)} {ABREV.get(u, u)}"
 
 
 def insumos_json(solo_comprables=False):
@@ -638,10 +675,9 @@ def insumo_form(id=None):
         unidad = f.get("unidad", "unidad")
         minimo = n(f.get("stock_minimo"))
         es_prep = bool(f.get("es_preparacion"))
-        receta = {}
-        for iid, c in zip(f.getlist("prep_insumo[]"), f.getlist("prep_cantidad[]")):
-            if iid and n(c) > 0:
-                receta[int(iid)] = receta.get(int(iid), 0) + n(c)
+        rinde = n(f.get("tanda_rinde"), 1) or 1
+        receta = leer_lineas(f.getlist("prep_insumo[]"), f.getlist("prep_cantidad[]"),
+                             f.getlist("prep_unidad[]"), divisor=rinde) if es_prep else {}
         dup = Insumo.query.filter(func.lower(Insumo.nombre) == nombre.lower(),
                                   Insumo.activo.is_(True), Insumo.id != (id or 0)).first()
         if not nombre:
@@ -651,7 +687,9 @@ def insumo_form(id=None):
         elif es_prep and not receta:
             flash("Agrega la receta de la preparación: qué insumos lleva y cuánto por cada "
                   f"{unidad}.", "error")
-        elif ins and ins.id in receta:
+        elif es_prep and rinde <= 0:
+            flash("Indica cuánto rinde una tanda de la preparación.", "error")
+        elif ins and ins in receta:
             flash("Una preparación no puede llevarse a sí misma como ingrediente.", "error")
         else:
             try:
@@ -660,13 +698,12 @@ def insumo_form(id=None):
                     ins = Insumo(nombre=nombre, unidad=unidad, stock_minimo=minimo)
                     db.session.add(ins)
                 ins.nombre, ins.unidad, ins.stock_minimo, ins.es_preparacion = nombre, unidad, minimo, es_prep
+                ins.tanda_rinde = rinde if es_prep else None
                 ins.receta_prep.clear()
                 db.session.flush()
-                if es_prep:
-                    for cid, c in receta.items():
-                        comp = db.session.get(Insumo, cid)
-                        if comp and not comp.es_preparacion:
-                            ins.receta_prep.append(PrepRecetaItem(componente=comp, cantidad=c))
+                for comp, (c, u) in receta.items():
+                    if not comp.es_preparacion:
+                        ins.receta_prep.append(PrepRecetaItem(componente=comp, cantidad=c, unidad=u))
                 if nuevo and not es_prep:
                     cant = n(f.get("cantidad_inicial"))
                     if cant > 0:
@@ -680,7 +717,7 @@ def insumo_form(id=None):
                 db.session.rollback()
                 for m in e.errores:
                     flash(m, "error")
-    receta = [dict(insumo_id=r.componente_id, cantidad=r.cantidad) for r in ins.receta_prep] if ins else []
+    receta = receta_json(ins.receta_prep, ins.tanda_rinde or 1, attr="componente") if ins else []
     comps = [i for i in insumos_json(solo_comprables=True) if not ins or i["id"] != ins.id]
     return render_template("insumo_form.html", ins=ins, unidades=UNIDADES, componentes=comps,
                            receta_prep=receta)
@@ -781,13 +818,14 @@ def producto_form(id=None):
         nombre = request.form.get("nombre", "").strip()
         dup = Producto.query.filter(func.lower(Producto.nombre) == nombre.lower(),
                                     Producto.activo.is_(True), Producto.id != (id or 0)).first()
-        receta = {}
-        for iid, c in zip(request.form.getlist("receta_insumo[]"),
-                          request.form.getlist("receta_cantidad[]")):
-            if iid and n(c) > 0:
-                receta[int(iid)] = receta.get(int(iid), 0) + n(c)
+        rinde = n(request.form.get("tanda_rinde"), 1) or 1
+        receta = leer_lineas(request.form.getlist("receta_insumo[]"),
+                             request.form.getlist("receta_cantidad[]"),
+                             request.form.getlist("receta_unidad[]"), divisor=rinde)
         if not nombre:
             flash("Escribe el nombre de la referencia.", "error")
+        elif rinde <= 0:
+            flash("La receta debe rendir al menos 1 vikingo.", "error")
         elif dup:
             flash("Ya existe una referencia activa con ese nombre.", "error")
         else:
@@ -798,16 +836,15 @@ def producto_form(id=None):
             prod.descripcion = request.form.get("descripcion", "").strip() or None
             prod.precio_venta = n(request.form.get("precio_venta"))
             prod.stock_minimo = int(n(request.form.get("stock_minimo")))
+            prod.tanda_rinde = rinde
             prod.receta.clear()
             db.session.flush()
-            for iid, c in receta.items():
-                ins = db.session.get(Insumo, iid)
-                if ins:
-                    prod.receta.append(RecetaItem(insumo=ins, cantidad=c))
+            for ins, (c, u) in receta.items():
+                prod.receta.append(RecetaItem(insumo=ins, cantidad=c, unidad=u))
             db.session.commit()
             flash(f"Referencia «{nombre}» guardada.", "ok")
             return redirect(url_for("producto_detalle", id=prod.id))
-    receta = [dict(insumo_id=r.insumo_id, cantidad=r.cantidad) for r in prod.receta] if prod else []
+    receta = receta_json(prod.receta, prod.tanda_rinde or 1) if prod else []
     return render_template("producto_form.html", prod=prod, insumos=insumos_json(), receta=receta)
 
 
@@ -856,15 +893,11 @@ def produccion_nueva():
     if request.method == "POST":
         f = request.form
         prod = db.session.get(Producto, int(f.get("producto_id") or 0))
-        consumos = {}
-        filas = []
-        for iid, c in zip(f.getlist("consumo_insumo[]"), f.getlist("consumo_cantidad[]")):
-            if not iid:
-                continue
-            ins = db.session.get(Insumo, int(iid))
-            if ins:
-                consumos[ins] = consumos.get(ins, 0) + n(c)
-                filas.append(dict(insumo_id=ins.id, cantidad=n(c)))
+        lineas = leer_lineas(f.getlist("consumo_insumo[]"), f.getlist("consumo_cantidad[]"),
+                             f.getlist("consumo_unidad[]"))
+        consumos = {i: c for i, (c, _) in lineas.items()}
+        filas = [dict(insumo_id=i.id, unidad=u, cantidad=round(convertir(c, i.unidad, u), 6))
+                 for i, (c, u) in lineas.items()]
         try:
             p = registrar_produccion(
                 prod, int(n(f.get("cantidad"))), consumos,
@@ -888,7 +921,7 @@ def produccion_nueva():
                 "otros_descripcion", "nota")}
             prefill["consumos"] = filas
     productos_data = [dict(id=p.id, nombre=p.nombre, precio=p.precio_venta,
-                           receta=[dict(insumo_id=r.insumo_id, cantidad=r.cantidad) for r in p.receta])
+                           receta=receta_json(p.receta))
                       for p in Producto.query.filter_by(activo=True).order_by(Producto.nombre)]
     return render_template("produccion_form.html", productos=productos_data,
                            insumos=insumos_json(), prefill=prefill,
@@ -1046,14 +1079,11 @@ def preparacion_nueva():
     if request.method == "POST":
         f = request.form
         prep = db.session.get(Insumo, int(f.get("insumo_id") or 0))
-        consumos, filas = {}, []
-        for iid, c in zip(f.getlist("consumo_insumo[]"), f.getlist("consumo_cantidad[]")):
-            if not iid:
-                continue
-            ins = db.session.get(Insumo, int(iid))
-            if ins:
-                consumos[ins] = consumos.get(ins, 0) + n(c)
-                filas.append(dict(insumo_id=ins.id, cantidad=n(c)))
+        lineas = leer_lineas(f.getlist("consumo_insumo[]"), f.getlist("consumo_cantidad[]"),
+                             f.getlist("consumo_unidad[]"))
+        consumos = {i: c for i, (c, _) in lineas.items()}
+        filas = [dict(insumo_id=i.id, unidad=u, cantidad=round(convertir(c, i.unidad, u), 6))
+                 for i, (c, u) in lineas.items()]
         try:
             p = registrar_preparacion(
                 prep, n(f.get("cantidad")), consumos, mano_obra=n(f.get("mano_obra")),
@@ -1068,11 +1098,11 @@ def preparacion_nueva():
             db.session.rollback()
             for m in e.errores:
                 flash(m, "error")
-            prefill = {k: f.get(k, "") for k in ("insumo_id", "cantidad", "fecha", "mano_obra",
+            prefill = {k: f.get(k, "") for k in ("insumo_id", "cantidad", "tandas", "fecha", "mano_obra",
                                                  "otros", "otros_descripcion", "nota")}
             prefill["consumos"] = filas
-    preps = [dict(id=i.id, nombre=i.nombre, unidad=i.unidad, stock=i.stock or 0,
-                  receta=[dict(insumo_id=r.componente_id, cantidad=r.cantidad) for r in i.receta_prep])
+    preps = [dict(id=i.id, nombre=i.nombre, unidad=i.unidad, stock=i.stock or 0, rinde=i.tanda_rinde or 1,
+                  receta=receta_json(i.receta_prep, attr="componente"))
              for i in Insumo.query.filter_by(activo=True, es_preparacion=True).order_by(Insumo.nombre)]
     return render_template("preparacion_form.html", preps=preps,
                            insumos=insumos_json(solo_comprables=True), prefill=prefill,
@@ -1204,7 +1234,11 @@ def migrar_columnas():
     nuevas = [("vk_compras", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
               ("vk_producciones", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
               ("vk_activos", "proveedor", "VARCHAR(120)"),
-              ("vk_insumos", "es_preparacion", "BOOLEAN NOT NULL DEFAULT FALSE")]
+              ("vk_insumos", "es_preparacion", "BOOLEAN NOT NULL DEFAULT FALSE"),
+              ("vk_insumos", "tanda_rinde", "FLOAT"),
+              ("vk_productos", "tanda_rinde", "FLOAT"),
+              ("vk_receta", "unidad", "VARCHAR(30)"),
+              ("vk_prep_receta", "unidad", "VARCHAR(30)")]
     insp = inspect(db.engine)
     for tabla, col, tipo in nuevas:
         if col not in {c["name"] for c in insp.get_columns(tabla)}:

@@ -28,14 +28,16 @@
       </div>
 
       <div class="card" id="recetaBox">
-        <div class="card-head"><h2>Receta por 1 <span class="uTxt">unidad</span> de preparación</h2></div>
-        <p class="hint" style="margin:-6px 0 10px">Ej: 1 litro de base de maíz lleva 0,05 kg de maizena y 0,9 litros de leche.</p>
+        <div class="card-head"><h2>Tanda estándar</h2></div>
+        <p class="hint" style="margin:-6px 0 10px">Lo que lleva una tanda normal y cuánto rinde. Ej: 375 g de maizena + 1.500 ml de leche rinden 3 kg de base.</p>
+        <div class="field" style="max-width:320px"><label>Una tanda rinde (<span class="uTxt">unidad</span>)</label>
+          <input class="input" type="number" step="any" min="0" name="tanda_rinde" id="rinde" value="{{ request.form.tanda_rinde or ('%g'|format(ins.tanda_rinde) if ins and ins.tanda_rinde else '1') }}"></div>
         <div class="table-wrap"><table class="lines">
-          <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Costo</th><th></th></tr></thead>
+          <thead><tr><th>Insumo</th><th class="num">Cantidad por tanda</th><th>Unidad</th><th class="num">Costo</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
         <button type="button" class="btn sec sm" id="add" style="margin-top:10px">＋ Agregar insumo</button>
-        <p class="hint" style="margin-top:10px">Costo estimado por <span class="uTxt">unidad</span> (solo insumos): <b id="cRec">$ 0</b></p>
+        <p class="hint" style="margin-top:10px">Costo de la tanda: <b id="cTanda">$ 0</b> · Costo estimado por <span class="uTxt">unidad</span> (solo insumos): <b id="cRec">$ 0</b></p>
       </div>
 
       {% if not ins %}
@@ -69,11 +71,14 @@ const $ = id => document.getElementById(id);
 const rows = $('rows');
 const byId = id => INS.find(i => i.id == id);
 function opts(sel) { return '<option value="">— Elegir —</option>' + INS.map(i => `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join(''); }
-function addRow(sel = '', cant = '') {
+function addRow(sel = '', cant = '', uni = '') {
   const tr = document.createElement('tr');
-  tr.innerHTML = `<td style="min-width:190px"><select class="input" name="prep_insumo[]">${opts(sel)}</select></td>
-    <td><input class="input r" type="number" step="any" min="0" name="prep_cantidad[]" value="${cant}" style="min-width:90px"></td>
-    <td class="un muted"></td><td class="num co">—</td><td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+  tr.innerHTML = `<td style="min-width:180px"><select class="input iSel" name="prep_insumo[]">${opts(sel)}</select></td>
+    <td><input class="input r" type="number" step="any" min="0" name="prep_cantidad[]" value="${cant}" style="min-width:80px"></td>
+    <td><select class="input uSel" name="prep_unidad[]" style="min-width:76px"></select></td><td class="num co">—</td><td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+  const iSel = tr.querySelector('.iSel'), uSel = tr.querySelector('.uSel');
+  llenarUnidades(uSel, (byId(sel) || {}).unidad, uni);
+  iSel.addEventListener('change', () => llenarUnidades(uSel, (byId(iSel.value) || {}).unidad));
   tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
   tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', calc));
   rows.appendChild(tr); calc();
@@ -81,11 +86,12 @@ function addRow(sel = '', cant = '') {
 function calc() {
   let t = 0;
   rows.querySelectorAll('tr').forEach(tr => {
-    const i = byId(tr.querySelector('select').value), q = val(tr.querySelector('input'));
-    tr.querySelector('.un').textContent = i ? i.unidad : ''; const c = i ? q * i.costo : 0; t += c;
+    const i = byId(tr.querySelector('.iSel').value), q = val(tr.querySelector('input')), u = tr.querySelector('.uSel').value;
+    const c = i ? conv(q, u, i.unidad) * i.costo : 0; t += c;
     tr.querySelector('.co').textContent = i ? COP(c) : '—';
   });
-  $('cRec').textContent = COP(t);
+  const r = val($('rinde')) || 1;
+  $('cTanda').textContent = COP(t); $('cRec').textContent = COP(t / r);
   document.querySelectorAll('.uTxt').forEach(e => e.textContent = $('unidad').value);
 }
 function ui() {
@@ -93,9 +99,9 @@ function ui() {
   $('recetaBox').style.display = p ? '' : 'none';
   if ($('iniBox')) $('iniBox').style.display = p ? 'none' : '';
 }
-$('esPrep').addEventListener('change', ui); $('unidad').addEventListener('change', calc);
+$('esPrep').addEventListener('change', ui); $('unidad').addEventListener('change', calc); $('rinde').addEventListener('input', calc);
 $('add').onclick = () => addRow();
-if (REC.length) REC.forEach(r => addRow(r.insumo_id, r.cantidad)); else addRow();
+if (REC.length) REC.forEach(r => addRow(r.insumo_id, r.cantidad, r.unidad)); else addRow();
 ui();
 </script>
 {% endblock %}

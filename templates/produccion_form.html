@@ -95,12 +95,15 @@ if ($('rows')) {
     return '<option value="">— Elegir —</option>' + INS.map(i =>
       `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join('');
   }
-  function addRow(sel = '', cant = '') {
+  function addRow(sel = '', cant = '', uni = '') {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="min-width:190px"><select class="input" name="consumo_insumo[]">${opts(sel)}</select></td>
-      <td><input class="input r" type="number" step="any" min="0" name="consumo_cantidad[]" value="${cant}" style="min-width:90px"></td>
-      <td class="un muted"></td><td class="num st"></td><td class="num co">—</td>
+    tr.innerHTML = `<td style="min-width:180px"><select class="input iSel" name="consumo_insumo[]">${opts(sel)}</select></td>
+      <td><input class="input r" type="number" step="any" min="0" name="consumo_cantidad[]" value="${cant}" style="min-width:80px"></td>
+      <td><select class="input uSel" name="consumo_unidad[]" style="min-width:72px"></select></td><td class="num st"></td><td class="num co">—</td>
       <td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+    const iSel = tr.querySelector('.iSel'), uSel = tr.querySelector('.uSel');
+    llenarUnidades(uSel, (ins(sel) || {}).unidad, uni);
+    iSel.addEventListener('change', () => llenarUnidades(uSel, (ins(iSel.value) || {}).unidad));
     tr.querySelector('.btn-icon').onclick = () => { tr.remove(); editado = true; calc(); };
     tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', () => { editado = true; calc(); }));
     rows.appendChild(tr);
@@ -109,7 +112,7 @@ if ($('rows')) {
     rows.innerHTML = '';
     const p = prod(), q = val($('cant'));
     if (p && p.receta.length) {
-      p.receta.forEach(r => addRow(r.insumo_id, q > 0 ? +(r.cantidad * q).toFixed(4) : ''));
+      p.receta.forEach(r => addRow(r.insumo_id, q > 0 ? +(r.cantidad * q).toFixed(4) : '', r.unidad));
       $('recipeNote').textContent = 'Calculado con la receta × ' + (q || 0) + ' vikingos. Ajusta si usaste más o menos (merma, sobrante).';
     } else {
       addRow();
@@ -129,9 +132,9 @@ if ($('rows')) {
   function calc() {
     let cIns = 0; const avisos = [], uso = {};
     rows.querySelectorAll('tr').forEach(tr => {
-      const i = ins(tr.querySelector('select').value), q = val(tr.querySelector('input'));
-      tr.querySelector('.un').textContent = i ? i.unidad : '';
-      tr.querySelector('.st').textContent = i ? NUM(i.stock, 2) : '';
+      const i = ins(tr.querySelector('.iSel').value), u = tr.querySelector('.uSel').value;
+      const q = i ? conv(val(tr.querySelector('input')), u, i.unidad) : 0;
+      tr.querySelector('.st').textContent = i ? NUM(conv(i.stock, i.unidad, u), 2) + ' ' + (ABR[u] || u) : '';
       tr.querySelector('.co').textContent = i ? COP(q * i.costo) : '—';
       if (i) { cIns += q * i.costo; uso[i.id] = (uso[i.id] || 0) + q; }
     });
@@ -164,7 +167,7 @@ if ($('rows')) {
       mo_responsable: 'moResp', costo_energia: 'cEn', costo_gas_agua: 'cGa', costo_transporte: 'cTr',
       costo_otros: 'cOt', otros_descripcion: 'otrosDesc', nota: 'nota' };
     for (const k in map) if (PRE[k] !== undefined && PRE[k] !== '') $(map[k]).value = PRE[k];
-    (PRE.consumos.length ? PRE.consumos : [{ insumo_id: '', cantidad: '' }]).forEach(c => addRow(c.insumo_id, c.cantidad));
+    (PRE.consumos.length ? PRE.consumos : [{ insumo_id: '', cantidad: '' }]).forEach(c => addRow(c.insumo_id, c.cantidad, c.unidad));
     editado = true; moUi(); calc();
   } else {
     if (PRESEL) $('prod').value = PRESEL;

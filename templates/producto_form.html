@@ -2,7 +2,7 @@
 {% block title %}{{ 'Editar' if prod else 'Nueva' }} referencia{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>{{ 'Editar ' ~ prod.nombre if prod else 'Nueva referencia de vikingo' }}</h1>
-  <p>La receta dice cuánto de cada insumo lleva <b>un</b> vikingo. Con ella se calcula el consumo, el costo y cuántos puedes hacer.</p></div></div>
+  <p>Escribe la receta como la preparas: lo que lleva una tanda y cuántos vikingos rinde. La app calcula lo de cada vikingo.</p></div></div>
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g-main">
@@ -18,15 +18,19 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>Receta por 1 vikingo</h2></div>
+        <div class="card-head"><h2>Receta</h2></div>
+        <div class="field" style="max-width:320px"><label>Esta receta rinde (vikingos)</label>
+          <input class="input" type="number" step="any" min="1" name="tanda_rinde" id="rinde" value="{{ request.form.tanda_rinde or ('%g'|format(prod.tanda_rinde) if prod and prod.tanda_rinde else '1') }}">
+          <div class="hint">Pon 1 si escribes la receta por vikingo, o lo que te salga en una tanda (ej. 15).</div></div>
         {% if not insumos %}<div class="note warn">Primero crea tus insumos. <a href="{{ url_for('insumo_form') }}">Crear insumo</a></div>{% endif %}
         <div class="table-wrap"><table class="lines">
-          <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Costo</th><th></th></tr></thead>
+          <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Costo tanda</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
         <button type="button" class="btn sec sm" id="add" style="margin-top:10px">＋ Agregar insumo</button>
-        <p class="hint" style="margin-top:12px">Ejemplo: 1 bolsa · 0,08 litros de leche · 0,015 kg de azúcar · 0,03 kg de pulpa.
-          Tip: si de 1 litro te salen 12 vikingos, la leche por vikingo es 1 ÷ 12 = 0,083.</p>
+        <p class="hint" style="margin-top:12px">Puedes escribir cada insumo en la unidad que te quede cómoda: gramos o kilos, mililitros o litros. La app convierte sola.
+          Ej: una tanda de 15 vikingos lleva 200 g de base de maíz y 15 bolsas.</p>
+        <p class="hint" id="porUno"></p>
       </div>
     </div>
     <div class="card summary">
@@ -58,33 +62,37 @@ function opts(sel) {
   return '<option value="">— Elegir —</option>' + INS.map(i =>
     `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join('');
 }
-function addRow(sel = '', cant = '') {
+function addRow(sel = '', cant = '', uni = '') {
   const tr = document.createElement('tr');
-  tr.innerHTML = `<td style="min-width:200px"><select class="input" name="receta_insumo[]">${opts(sel)}</select></td>
-    <td><input class="input r" type="number" step="any" min="0" name="receta_cantidad[]" value="${cant}" style="min-width:90px"></td>
-    <td class="un muted"></td><td class="num co">—</td>
+  tr.innerHTML = `<td style="min-width:190px"><select class="input iSel" name="receta_insumo[]">${opts(sel)}</select></td>
+    <td><input class="input r" type="number" step="any" min="0" name="receta_cantidad[]" value="${cant}" style="min-width:80px"></td>
+    <td><select class="input uSel" name="receta_unidad[]" style="min-width:76px"></select></td><td class="num co">—</td>
     <td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+  const iSel = tr.querySelector('.iSel'), uSel = tr.querySelector('.uSel');
+  llenarUnidades(uSel, (byId(sel) || {}).unidad, uni);
+  iSel.addEventListener('change', () => llenarUnidades(uSel, (byId(iSel.value) || {}).unidad));
   tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
   tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', calc));
   rows.appendChild(tr); calc();
 }
 function calc() {
-  let t = 0;
+  let t = 0; const r = Math.max(val(document.getElementById('rinde')), 0) || 1, uno = [];
   rows.querySelectorAll('tr').forEach(tr => {
-    const ins = byId(tr.querySelector('select').value), q = val(tr.querySelector('input'));
-    tr.querySelector('.un').textContent = ins ? ins.unidad : '';
-    const c = ins ? q * ins.costo : 0; t += c;
+    const ins = byId(tr.querySelector('.iSel').value), q = val(tr.querySelector('input')), u = tr.querySelector('.uSel').value;
+    const base = ins ? conv(q, u, ins.unidad) : 0, c = ins ? base * ins.costo : 0; t += c;
     tr.querySelector('.co').textContent = ins ? COP(c) : '—';
+    if (ins && q) uno.push(NUM(q / r, 4) + ' ' + (ABR[u] || u) + ' de ' + ins.nombre);
   });
-  const pv = val(document.getElementById('precio'));
-  document.getElementById('costo').textContent = COP(t);
+  const unit = t / r, pv = val(document.getElementById('precio'));
+  document.getElementById('costo').textContent = COP(unit);
   document.getElementById('pv').textContent = COP(pv);
-  const g = pv - t, gEl = document.getElementById('gan');
+  const g = pv - unit, gEl = document.getElementById('gan');
   gEl.textContent = COP(g); gEl.className = g >= 0 ? 'pos' : 'neg';
   document.getElementById('mar').textContent = pv ? NUM(g / pv * 100, 1) + '%' : '—';
+  document.getElementById('porUno').innerHTML = r > 1 && uno.length ? '<b>Por cada vikingo:</b> ' + uno.join(' · ') : '';
 }
-document.getElementById('precio').addEventListener('input', calc);
+['precio', 'rinde'].forEach(i => document.getElementById(i).addEventListener('input', calc));
 document.getElementById('add').onclick = () => addRow();
-if (RECETA.length) RECETA.forEach(r => addRow(r.insumo_id, r.cantidad)); else addRow();
+if (RECETA.length) RECETA.forEach(r => addRow(r.insumo_id, r.cantidad, r.unidad)); else addRow();
 </script>
 {% endblock %}

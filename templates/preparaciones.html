@@ -36,7 +36,7 @@
     {% for i in preps %}
       <div class="sum-line">
         <span><b>{{ i.nombre }}</b><br><small>Hay {{ i.stock|num(3) }} {{ i.unidad }} · {{ i.costo_promedio|cop }} / {{ i.unidad }}</small><br>
-          <small class="muted">Receta: {% for r in i.receta_prep %}{{ r.cantidad|num(4) }} {{ r.componente.unidad }} de {{ r.componente.nombre }}{{ ', ' if not loop.last }}{% else %}sin receta{% endfor %}</small></span>
+          <small class="muted">Tanda: {% for r in i.receta_prep %}{{ r|cant_receta('componente', i.tanda_rinde or 1) }} de {{ r.componente.nombre }}{{ ', ' if not loop.last }}{% else %}sin receta{% endfor %} → rinde {{ (i.tanda_rinde or 1)|num(3) }} {{ i.unidad }}</small></span>
         <a class="btn sm" style="align-self:center" href="{{ url_for('preparacion_nueva', insumo=i.id) }}">Preparar</a>
       </div>
     {% else %}

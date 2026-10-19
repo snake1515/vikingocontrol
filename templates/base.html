@@ -77,6 +77,17 @@
   const COP = v => (v < -0.5 ? '-$ ' : '$ ') + Math.round(Math.abs(v || 0)).toLocaleString('es-CO');
   const NUM = (v, d = 2) => (v || 0).toLocaleString('es-CO', { maximumFractionDigits: d });
   const val = el => { const x = parseFloat(String(el && el.value || '').replace(',', '.')); return isNaN(x) ? 0 : x; };
+  // Unidades convertibles: masa (g) y volumen (ml)
+  const UNI = { kilogramo: ['m', 1000], gramo: ['m', 1], libra: ['m', 453.592], litro: ['v', 1000], mililitro: ['v', 1], 'galón': ['v', 3785.41] };
+  const ABR = { kilogramo: 'kg', gramo: 'g', libra: 'lb', litro: 'L', mililitro: 'ml', 'galón': 'gal', unidad: 'und' };
+  const compat = u => UNI[u] ? Object.keys(UNI).filter(k => UNI[k][0] === UNI[u][0]) : [u];
+  const conv = (q, de, a) => (!UNI[de] || !UNI[a] || UNI[de][0] !== UNI[a][0]) ? q : q * UNI[de][1] / UNI[a][1];
+  // Llena un <select> de unidades según el insumo; conserva la unidad elegida si es compatible
+  function llenarUnidades(sel, base, elegida) {
+    const ops = compat(base || 'unidad'), u = ops.includes(elegida) ? elegida : (ops.includes(sel.value) ? sel.value : base);
+    sel.innerHTML = ops.map(o => `<option value="${o}" ${o === u ? 'selected' : ''}>${ABR[o] || o}</option>`).join('');
+    sel.disabled = ops.length < 2 && !base ? false : false;
+  }
 </script>
 <script>
   // Navegación más ágil: precarga la página al pasar el mouse o tocar un enlace del menú,

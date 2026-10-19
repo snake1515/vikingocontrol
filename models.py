@@ -115,6 +115,7 @@ class Insumo(db.Model):
     activo = db.Column(db.Boolean, nullable=False, default=True)
     # Preparación propia (ej. base de maíz): no se compra ni se vende, se elabora con otros insumos
     es_preparacion = db.Column(db.Boolean, nullable=False, default=False)
+    tanda_rinde = db.Column(db.Float)  # cuánto rinde una tanda estándar (en la unidad del insumo)
 
     receta_prep = db.relationship(
         "PrepRecetaItem", foreign_keys="PrepRecetaItem.preparacion_id", lazy="selectin",
@@ -162,6 +163,7 @@ class Producto(db.Model):
     costo_promedio = db.Column(db.Float, nullable=False, default=0)
     stock_minimo = db.Column(db.Integer, nullable=False, default=0)
     activo = db.Column(db.Boolean, nullable=False, default=True)
+    tanda_rinde = db.Column(db.Float)  # vikingos que rinde la receta tal como se escribió
 
     receta = db.relationship(
         "RecetaItem", back_populates="producto", lazy="selectin",
@@ -203,7 +205,8 @@ class RecetaItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     producto_id = db.Column(db.Integer, db.ForeignKey("vk_productos.id"), nullable=False)
     insumo_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
-    cantidad = db.Column(db.Float, nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)  # por 1 vikingo, en la unidad del insumo
+    unidad = db.Column(db.String(30))  # unidad en que se escribió (ej. gramo), solo para mostrar
 
     producto = db.relationship("Producto", back_populates="receta")
     insumo = db.relationship("Insumo", lazy="joined")
@@ -374,7 +377,8 @@ class PrepRecetaItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     preparacion_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
     componente_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
-    cantidad = db.Column(db.Float, nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)  # por 1 unidad de la preparación, en unidad del componente
+    unidad = db.Column(db.String(30))  # unidad en que se escribió, solo para mostrar
 
     preparacion = db.relationship("Insumo", foreign_keys=[preparacion_id], back_populates="receta_prep")
     componente = db.relationship("Insumo", foreign_keys=[componente_id], lazy="joined")

@@ -29,7 +29,7 @@
       {% for r in prod.receta %}
         <tr {% if lim and r.insumo_id == lim.id %}style="background:var(--warn-soft)"{% endif %}>
           <td>{{ r.insumo.nombre }}</td>
-          <td class="num">{{ r.cantidad|num(4) }} {{ r.insumo.unidad }}</td>
+          <td class="num">{{ r|cant_receta }}</td>
           <td class="num">{{ (r.cantidad * r.insumo.costo_promedio)|cop }}</td>
           <td class="num">{{ r.insumo.stock|num(2) }}</td>
           <td class="num">{{ ((r.insumo.stock if r.insumo.stock > 0 else 0) // r.cantidad)|int|num }}</td>
