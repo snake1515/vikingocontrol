@@ -457,3 +457,28 @@ class Bonificacion(db.Model):
     motivo = db.Column(db.String(255))
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
     cliente = db.relationship("Cliente")
+
+
+class Devolucion(db.Model):
+    """Devolución parcial de una venta: el cliente no recibió parte del pedido."""
+    __tablename__ = "vk_devoluciones"
+    id = db.Column(db.Integer, primary_key=True)
+    venta_id = db.Column(db.Integer, db.ForeignKey("vk_ventas.id"), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, nullable=False, default=ahora)
+    motivo = db.Column(db.String(255))
+    total = db.Column(db.Float, nullable=False, default=0)
+    unidades = db.Column(db.Integer, nullable=False, default=0)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    usuario = db.relationship("Usuario", lazy="joined")
+    items = db.relationship("DevolucionItem", lazy="selectin", cascade="all, delete-orphan")
+
+
+class DevolucionItem(db.Model):
+    __tablename__ = "vk_devolucion_items"
+    id = db.Column(db.Integer, primary_key=True)
+    devolucion_id = db.Column(db.Integer, db.ForeignKey("vk_devoluciones.id"), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey("vk_productos.id"), nullable=False)
+    cantidad = db.Column(db.Integer, nullable=False)
+    precio_unitario = db.Column(db.Float, nullable=False)
+    bonificado = db.Column(db.Boolean, nullable=False, default=False)
+    producto = db.relationship("Producto", lazy="joined")

@@ -4,7 +4,7 @@ Cada función valida, mueve inventario y calcula costos. Si algo no cuadra
 lanza ErrorNegocio con la lista de mensajes para mostrar al usuario.
 El commit lo hace quien llama.
 """
-from models import (CompraInsumo, Preparacion, PreparacionConsumo, Produccion,
+from models import (CompraInsumo, Devolucion, DevolucionItem, Preparacion, PreparacionConsumo, Produccion,
                     ProduccionConsumo, Venta,
                     VentaItem, ahora, db)
 
@@ -272,3 +272,39 @@ def anular_preparacion(p):
         i.costo_promedio = promedio_ponderado(i.stock, i.costo_promedio, c.cantidad, c.costo_unitario)
         i.stock = (i.stock or 0) + c.cantidad
     p.anulada = True
+
+
+def devolver_parcial(venta, cantidades, motivo="", usuario_id=None):
+    """cantidades: dict {VentaItem: unidades a devolver}. Ajusta la venta y regresa los vikingos."""
+    if venta.anulada:
+        raise ErrorNegocio("Esta venta está anulada; no admite devoluciones.")
+    cantidades = {it: c for it, c in cantidades.items() if c > 0}
+    if not cantidades:
+        raise ErrorNegocio("Indica cuántos vikingos devuelve el cliente.")
+    errores = [f"De «{it.producto.nombre}» se vendieron {it.cantidad}; no se pueden devolver {c}."
+               for it, c in cantidades.items() if c > it.cantidad]
+    if errores:
+        raise ErrorNegocio(errores)
+    if sum(cantidades.values()) >= venta.unidades:
+        raise ErrorNegocio("Si el cliente devuelve todo, usa «Anular venta».")
+
+    dev = Devolucion(venta_id=venta.id, motivo=(motivo or "").strip()[:255] or None, usuario_id=usuario_id,
+                     total=0.0, unidades=0)
+    for it, c in cantidades.items():
+        p = it.producto
+        p.costo_promedio = promedio_ponderado(p.stock, p.costo_promedio, c, it.costo_unitario)
+        p.stock = (p.stock or 0) + c
+        dev.items.append(DevolucionItem(producto=p, cantidad=c, precio_unitario=it.precio_unitario,
+                                        bonificado=it.bonificado))
+        dev.total += c * it.precio_unitario
+        dev.unidades += c
+        it.cantidad -= c
+        it.subtotal = it.cantidad * it.precio_unitario
+        it.costo = it.cantidad * it.costo_unitario
+        if it.cantidad == 0:
+            venta.items.remove(it)
+    venta.total = sum(i.subtotal for i in venta.items)
+    venta.costo_total = sum(i.costo for i in venta.items)
+    venta.ganancia = venta.total - venta.costo_total
+    db.session.add(dev)
+    return dev

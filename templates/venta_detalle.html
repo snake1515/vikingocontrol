@@ -27,14 +27,48 @@
       {% if puede('admin') %}<td class="num">{{ v.costo_total|cop }}</td><td class="num {{ 'pos' if v.ganancia >= 0 else 'neg' }}">{{ v.ganancia|cop }}</td>{% endif %}</tr></tfoot>
   </table></div>
   {% if v.nota %}<p class="hint">Nota: {{ v.nota }}</p>{% endif %}
+  {% if devs %}
+  <div class="note" style="margin-top:14px"><b>Devoluciones:</b>
+    {% for d in devs %}<div>{{ d.fecha|fecha(True) }} · {% for i in d.items %}{{ i.cantidad }} {{ i.producto.nombre }}{% if i.bonificado %} (regalo){% endif %}{{ ', ' if not loop.last }}{% endfor %} · −{{ d.total|cop }}{% if d.motivo %} · <i>{{ d.motivo }}</i>{% endif %}{% if d.usuario %} · {{ d.usuario.nombre }}{% endif %}</div>{% endfor %}
+  </div>
+  {% endif %}
   {% if puede('admin') and not v.anulada %}
-  <form method="post" action="{{ url_for('venta_anular', id=v.id) }}" style="margin-top:16px" onsubmit="return confirm('¿Anular esta venta? Los vikingos vuelven al inventario.')">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Anular venta</button>
+  <div class="actions" style="margin-top:16px">
+    <button type="button" class="btn sec sm" id="abrirDev">↩ Devolución parcial</button>
+    <form method="post" action="{{ url_for('venta_anular', id=v.id) }}" onsubmit="return confirm('¿Anular esta venta? Los vikingos vuelven al inventario.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Anular venta</button>
+    </form>
+  </div>
+  <form method="post" action="{{ url_for('venta_devolucion', id=v.id) }}" id="devForm" style="display:none;margin-top:14px;background:var(--bg);border-radius:10px;padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h3 style="margin-bottom:6px">Devolución parcial</h3>
+    <p class="hint" style="margin:0 0 10px">Escribe cuántos vikingos de cada sabor <b>no recibió</b> el cliente. Vuelven al inventario y la venta se ajusta.</p>
+    <div class="table-wrap"><table class="lines">
+      <thead><tr><th>Vikingo</th><th class="num">Vendidos</th><th class="num">Devuelve</th><th class="num">Valor</th></tr></thead>
+      <tbody>{% for it in v.items %}
+        <tr><td>{{ it.producto.nombre }}{% if it.bonificado %} <span class="badge berry">🎁</span>{% endif %}</td><td class="num">{{ it.cantidad }}</td>
+          <td class="num"><input class="input r dv" type="number" min="0" max="{{ it.cantidad }}" step="1" name="dev_{{ it.id }}" data-p="{{ it.precio_unitario }}" placeholder="0" style="width:90px;margin-left:auto"></td>
+          <td class="num dvv">—</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <div class="field" style="margin-top:10px"><label>Motivo</label><input class="input" name="motivo" placeholder="Ej: el cliente solo recibió 30, no tenía espacio en el congelador"></div>
+    <div class="actions"><button class="btn sm" id="devBtn">Registrar devolución · <span id="devTot">$ 0</span></button><button type="button" class="btn sec sm" id="cerrarDev">Cancelar</button></div>
   </form>
   {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
+<script>
+  (() => {
+    const f = document.getElementById('devForm'); if (!f) return;
+    document.getElementById('abrirDev').onclick = () => { f.style.display = ''; f.scrollIntoView({ behavior: 'smooth' }); };
+    document.getElementById('cerrarDev').onclick = () => { f.style.display = 'none'; };
+    const calc = () => { let t = 0, u = 0; f.querySelectorAll('.dv').forEach(i => { let q = Math.min(val(i), +i.max); t += q * +i.dataset.p; u += q; i.closest('tr').querySelector('.dvv').textContent = q ? '−' + COP(q * +i.dataset.p) : '—'; });
+      document.getElementById('devTot').textContent = u + ' vikingo' + (u === 1 ? '' : 's') + ' · −' + COP(t); document.getElementById('devBtn').disabled = !u; };
+    f.querySelectorAll('.dv').forEach(i => i.addEventListener('input', calc)); calc();
+    f.addEventListener('submit', e => { if (!confirm('¿Registrar la devolución? Los vikingos vuelven al inventario.')) e.preventDefault(); });
+  })();
+</script>
 <script>
   // En celulares con soporte, comparte la imagen directo (WhatsApp, Telegram, etc.)
   (async () => {

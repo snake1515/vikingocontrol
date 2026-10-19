@@ -12,7 +12,7 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
-from models import (CATEGORIAS_GASTO, TIPOS_CLIENTE, Bonificacion, Cliente, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
+from models import (CATEGORIAS_GASTO, Devolucion, TIPOS_CLIENTE, Bonificacion, Cliente, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
                     CompraInsumo, Gasto,
                     Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
@@ -22,7 +22,7 @@ import reportes as rpt
 import clientes_calc as ccalc
 from unidades import ABREV, compatibles, convertir, unidad_valida
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
-from services import (ErrorNegocio, anular_compra, anular_preparacion, anular_produccion,
+from services import (ErrorNegocio, devolver_parcial, anular_compra, anular_preparacion, anular_produccion,
                       anular_venta, registrar_preparacion, registrar_compra,
                       registrar_produccion, registrar_venta)
 
@@ -1142,7 +1142,8 @@ def venta_detalle(id):
     v = db.session.get(Venta, id) or abort(404)
     if current_user.rol == "vendedor" and v.usuario_id != current_user.id:
         abort(404)
-    return render_template("venta_detalle.html", v=v)
+    devs = Devolucion.query.filter_by(venta_id=id).order_by(Devolucion.fecha).all()
+    return render_template("venta_detalle.html", v=v, devs=devs)
 
 
 @app.route("/ventas/<int:id>/comprobante.<fmt>")
@@ -1307,6 +1308,27 @@ def produccion_anular(id):
         db.session.rollback()
         flash(e.errores[0], "error")
     return redirect(url_for("produccion_detalle", id=id))
+
+
+@app.route("/ventas/<int:id>/devolucion", methods=["POST"])
+@rol_requerido("admin")
+def venta_devolucion(id):
+    v = db.session.get(Venta, id) or abort(404)
+    cant = {}
+    for it in v.items:
+        c = int(n(request.form.get(f"dev_{it.id}")))
+        if c:
+            cant[it] = c
+    try:
+        dev = devolver_parcial(v, cant, request.form.get("motivo", ""), current_user.id)
+        db.session.commit()
+        flash(f"Devolución registrada: {dev.unidades} vikingos volvieron al inventario y la venta "
+              f"quedó en {filtro_cop(v.total)}.", "ok")
+    except ErrorNegocio as e:
+        db.session.rollback()
+        for m in e.errores:
+            flash(m, "error")
+    return redirect(url_for("venta_detalle", id=id))
 
 
 @app.route("/ventas/<int:id>/anular", methods=["POST"])
