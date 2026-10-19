@@ -12,7 +12,7 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
-from models import (CATEGORIAS_GASTO, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
+from models import (CATEGORIAS_GASTO, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
                     CompraInsumo, Gasto,
                     Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
@@ -20,7 +20,8 @@ from models import (CATEGORIAS_GASTO, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, A
 import comprobantes
 import reportes as rpt
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
-from services import (ErrorNegocio, anular_compra, anular_produccion, anular_venta, registrar_compra,
+from services import (ErrorNegocio, anular_compra, anular_preparacion, anular_produccion,
+                      anular_venta, registrar_preparacion, registrar_compra,
                       registrar_produccion, registrar_venta)
 
 load_dotenv()
@@ -190,10 +191,13 @@ def filtro_fecha(v, hora=False):
     return v.strftime("%d/%m/%Y %I:%M %p" if hora else "%d/%m/%Y")
 
 
-def insumos_json():
-    return [dict(id=i.id, nombre=i.nombre, unidad=i.unidad,
+def insumos_json(solo_comprables=False):
+    q = Insumo.query.filter_by(activo=True)
+    if solo_comprables:
+        q = q.filter(Insumo.es_preparacion.is_(False))
+    return [dict(id=i.id, nombre=i.nombre, unidad=i.unidad, prep=i.es_preparacion,
                  costo=i.costo_promedio or 0, stock=i.stock or 0)
-            for i in Insumo.query.filter_by(activo=True).order_by(Insumo.nombre)]
+            for i in q.order_by(Insumo.nombre)]
 
 
 # ------------------------------------------------------------------- sesión
@@ -629,34 +633,57 @@ def insumo_form(id=None):
     if id and not ins:
         abort(404)
     if request.method == "POST":
-        nombre = request.form.get("nombre", "").strip()
-        unidad = request.form.get("unidad", "unidad")
-        minimo = n(request.form.get("stock_minimo"))
+        f = request.form
+        nombre = f.get("nombre", "").strip()
+        unidad = f.get("unidad", "unidad")
+        minimo = n(f.get("stock_minimo"))
+        es_prep = bool(f.get("es_preparacion"))
+        receta = {}
+        for iid, c in zip(f.getlist("prep_insumo[]"), f.getlist("prep_cantidad[]")):
+            if iid and n(c) > 0:
+                receta[int(iid)] = receta.get(int(iid), 0) + n(c)
         dup = Insumo.query.filter(func.lower(Insumo.nombre) == nombre.lower(),
                                   Insumo.activo.is_(True), Insumo.id != (id or 0)).first()
         if not nombre:
             flash("Escribe el nombre del insumo.", "error")
         elif dup:
             flash("Ya existe un insumo activo con ese nombre.", "error")
+        elif es_prep and not receta:
+            flash("Agrega la receta de la preparación: qué insumos lleva y cuánto por cada "
+                  f"{unidad}.", "error")
+        elif ins and ins.id in receta:
+            flash("Una preparación no puede llevarse a sí misma como ingrediente.", "error")
         else:
             try:
-                if not ins:
+                nuevo = ins is None
+                if nuevo:
                     ins = Insumo(nombre=nombre, unidad=unidad, stock_minimo=minimo)
                     db.session.add(ins)
-                    cant = n(request.form.get("cantidad_inicial"))
+                ins.nombre, ins.unidad, ins.stock_minimo, ins.es_preparacion = nombre, unidad, minimo, es_prep
+                ins.receta_prep.clear()
+                db.session.flush()
+                if es_prep:
+                    for cid, c in receta.items():
+                        comp = db.session.get(Insumo, cid)
+                        if comp and not comp.es_preparacion:
+                            ins.receta_prep.append(PrepRecetaItem(componente=comp, cantidad=c))
+                if nuevo and not es_prep:
+                    cant = n(f.get("cantidad_inicial"))
                     if cant > 0:
-                        registrar_compra(ins, cant, n(request.form.get("costo_inicial")),
-                                         nota="Inventario inicial", usuario_id=current_user.id)
-                else:
-                    ins.nombre, ins.unidad, ins.stock_minimo = nombre, unidad, minimo
+                        registrar_compra(ins, cant, n(f.get("costo_inicial")), nota="Inventario inicial",
+                                         fecha=fecha_form(f.get("fecha_inicial")),
+                                         usuario_id=current_user.id)
                 db.session.commit()
-                flash(f"Insumo «{nombre}» guardado.", "ok")
+                flash(f"{'Preparación' if es_prep else 'Insumo'} «{nombre}» guardado.", "ok")
                 return redirect(url_for("insumos"))
             except ErrorNegocio as e:
                 db.session.rollback()
                 for m in e.errores:
                     flash(m, "error")
-    return render_template("insumo_form.html", ins=ins, unidades=UNIDADES)
+    receta = [dict(insumo_id=r.componente_id, cantidad=r.cantidad) for r in ins.receta_prep] if ins else []
+    comps = [i for i in insumos_json(solo_comprables=True) if not ins or i["id"] != ins.id]
+    return render_template("insumo_form.html", ins=ins, unidades=UNIDADES, componentes=comps,
+                           receta_prep=receta)
 
 
 @app.route("/insumos/<int:id>/eliminar", methods=["POST"])
@@ -665,6 +692,9 @@ def insumo_eliminar(id):
     ins = db.session.get(Insumo, id) or abort(404)
     if RecetaItem.query.filter_by(insumo_id=id).join(Producto).filter(Producto.activo.is_(True)).count():
         flash("Ese insumo está en la receta de un vikingo activo. Quítalo de la receta primero.", "error")
+    elif PrepRecetaItem.query.filter_by(componente_id=id).join(
+            Insumo, PrepRecetaItem.preparacion_id == Insumo.id).filter(Insumo.activo.is_(True)).count():
+        flash("Ese insumo se usa en la receta de una preparación. Quítalo de esa receta primero.", "error")
     else:
         ins.activo = False
         db.session.commit()
@@ -729,7 +759,7 @@ def compra_nueva():
             db.session.rollback()
             for m in e.errores:
                 flash(m, "error")
-    return render_template("compra_form.html", insumos=insumos_json())
+    return render_template("compra_form.html", insumos=insumos_json(solo_comprables=True))
 
 
 # --------------------------------------------------------------- productos
@@ -974,6 +1004,102 @@ def negocio():
     return render_template("negocio.html", neg=neg, ultima=ultima)
 
 
+@app.route("/compras/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin", "produccion")
+def compra_editar(id):
+    c = db.session.get(CompraInsumo, id) or abort(404)
+    if c.anulada:
+        flash("Esta compra está anulada; no se puede editar.", "error")
+        return redirect(url_for("compras"))
+    if request.method == "POST":
+        nueva = _fecha(request.form.get("fecha"))
+        if not nueva:
+            flash("Indica una fecha válida.", "error")
+        elif nueva > ahora().date():
+            flash("La fecha no puede ser futura.", "error")
+        else:
+            if nueva != c.fecha.date():
+                c.fecha = fecha_form(nueva.isoformat())
+            c.proveedor = request.form.get("proveedor", "").strip()[:120] or None
+            c.nota = request.form.get("nota", "").strip()[:255] or None
+            db.session.commit()
+            flash(f"Compra de «{c.insumo.nombre}» actualizada.", "ok")
+            return redirect(url_for("compras", desde=min(nueva, ahora().date().replace(day=1)).isoformat()))
+    return render_template("compra_editar.html", c=c)
+
+
+# ------------------------------------------------------------ preparaciones
+@app.route("/preparaciones")
+@rol_requerido("admin", "produccion")
+def preparaciones():
+    ini, fin, desde, hasta = periodo()
+    items = (Preparacion.query.filter(Preparacion.fecha >= ini, Preparacion.fecha < fin)
+             .order_by(Preparacion.fecha.desc()).all())
+    preps = Insumo.query.filter_by(activo=True, es_preparacion=True).order_by(Insumo.nombre).all()
+    return render_template("preparaciones.html", items=items, preps=preps, desde=desde, hasta=hasta)
+
+
+@app.route("/preparaciones/nueva", methods=["GET", "POST"])
+@rol_requerido("admin", "produccion")
+def preparacion_nueva():
+    prefill = None
+    if request.method == "POST":
+        f = request.form
+        prep = db.session.get(Insumo, int(f.get("insumo_id") or 0))
+        consumos, filas = {}, []
+        for iid, c in zip(f.getlist("consumo_insumo[]"), f.getlist("consumo_cantidad[]")):
+            if not iid:
+                continue
+            ins = db.session.get(Insumo, int(iid))
+            if ins:
+                consumos[ins] = consumos.get(ins, 0) + n(c)
+                filas.append(dict(insumo_id=ins.id, cantidad=n(c)))
+        try:
+            p = registrar_preparacion(
+                prep, n(f.get("cantidad")), consumos, mano_obra=n(f.get("mano_obra")),
+                otros=n(f.get("otros")), otros_descripcion=f.get("otros_descripcion", ""),
+                nota=f.get("nota", "").strip(), fecha=fecha_form(f.get("fecha")),
+                usuario_id=current_user.id)
+            db.session.commit()
+            flash(f"Preparación registrada: {filtro_num(p.cantidad, 3)} {p.insumo.unidad} de "
+                  f"«{p.insumo.nombre}» a {filtro_cop(p.costo_unitario)} por {p.insumo.unidad}.", "ok")
+            return redirect(url_for("preparacion_detalle", id=p.id))
+        except ErrorNegocio as e:
+            db.session.rollback()
+            for m in e.errores:
+                flash(m, "error")
+            prefill = {k: f.get(k, "") for k in ("insumo_id", "cantidad", "fecha", "mano_obra",
+                                                 "otros", "otros_descripcion", "nota")}
+            prefill["consumos"] = filas
+    preps = [dict(id=i.id, nombre=i.nombre, unidad=i.unidad, stock=i.stock or 0,
+                  receta=[dict(insumo_id=r.componente_id, cantidad=r.cantidad) for r in i.receta_prep])
+             for i in Insumo.query.filter_by(activo=True, es_preparacion=True).order_by(Insumo.nombre)]
+    return render_template("preparacion_form.html", preps=preps,
+                           insumos=insumos_json(solo_comprables=True), prefill=prefill,
+                           preseleccion=request.args.get("insumo", type=int))
+
+
+@app.route("/preparaciones/<int:id>")
+@rol_requerido("admin", "produccion")
+def preparacion_detalle(id):
+    p = db.session.get(Preparacion, id) or abort(404)
+    return render_template("preparacion_detalle.html", p=p)
+
+
+@app.route("/preparaciones/<int:id>/anular", methods=["POST"])
+@rol_requerido("admin")
+def preparacion_anular(id):
+    p = db.session.get(Preparacion, id) or abort(404)
+    try:
+        anular_preparacion(p)
+        db.session.commit()
+        flash("Preparación anulada: la base se descontó y los insumos volvieron a la bodega.", "ok")
+    except ErrorNegocio as e:
+        db.session.rollback()
+        flash(e.errores[0], "error")
+    return redirect(url_for("preparacion_detalle", id=id))
+
+
 @app.route("/compras/<int:id>/anular", methods=["POST"])
 @rol_requerido("admin")
 def compra_anular(id):
@@ -1077,7 +1203,8 @@ def migrar_columnas():
     from sqlalchemy import inspect, text
     nuevas = [("vk_compras", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
               ("vk_producciones", "anulada", "BOOLEAN NOT NULL DEFAULT FALSE"),
-              ("vk_activos", "proveedor", "VARCHAR(120)")]
+              ("vk_activos", "proveedor", "VARCHAR(120)"),
+              ("vk_insumos", "es_preparacion", "BOOLEAN NOT NULL DEFAULT FALSE")]
     insp = inspect(db.engine)
     for tabla, col, tipo in nuevas:
         if col not in {c["name"] for c in insp.get_columns(tabla)}:

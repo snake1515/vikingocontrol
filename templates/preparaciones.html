@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Preparaciones{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Preparaciones (bases)</h1><p>Lo que se elabora para usar en los vikingos y no se vende, como la base de maíz.</p></div>
+  <div class="actions">
+    <form class="filters" method="get">
+      <div class="field"><label>Desde</label><input class="input" type="date" name="desde" value="{{ desde }}"></div>
+      <div class="field"><label>Hasta</label><input class="input" type="date" name="hasta" value="{{ hasta }}"></div>
+      <button class="btn sec">Filtrar</button>
+    </form>
+    <a class="btn" href="{{ url_for('preparacion_nueva') }}">◍ Registrar preparación</a>
+  </div>
+</div>
+
+<div class="grid g-main">
+  <div class="card">
+    <div class="card-head"><h2>Preparaciones elaboradas</h2></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Preparación</th><th class="num">Cantidad</th><th class="num">Costo total</th><th class="num">Costo por unidad</th></tr></thead>
+      <tbody>
+      {% for p in items %}
+        <tr class="{{ 'anulada' if p.anulada }}">
+          <td><a href="{{ url_for('preparacion_detalle', id=p.id) }}">{{ p.fecha|fecha }}</a></td>
+          <td><b>{{ p.insumo.nombre }}</b>{% if p.anulada %} <span class="badge err">Anulada</span>{% endif %}</td>
+          <td class="num">{{ p.cantidad|num(3) }} {{ p.insumo.unidad }}</td>
+          <td class="num">{{ p.costo_total|cop }}</td>
+          <td class="num">{{ p.costo_unitario|cop }} / {{ p.insumo.unidad }}</td>
+        </tr>
+      {% else %}<tr><td colspan="5" class="empty">No hay preparaciones en este periodo.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Mis preparaciones</h2><a class="btn sec sm" href="{{ url_for('insumo_form', prep=1) }}">＋ Nueva</a></div>
+    {% for i in preps %}
+      <div class="sum-line">
+        <span><b>{{ i.nombre }}</b><br><small>Hay {{ i.stock|num(3) }} {{ i.unidad }} · {{ i.costo_promedio|cop }} / {{ i.unidad }}</small><br>
+          <small class="muted">Receta: {% for r in i.receta_prep %}{{ r.cantidad|num(4) }} {{ r.componente.unidad }} de {{ r.componente.nombre }}{{ ', ' if not loop.last }}{% else %}sin receta{% endfor %}</small></span>
+        <a class="btn sm" style="align-self:center" href="{{ url_for('preparacion_nueva', insumo=i.id) }}">Preparar</a>
+      </div>
+    {% else %}
+      <p class="hint">Aún no hay preparaciones. Crea la primera, por ejemplo «Base de maíz», con su receta por litro.</p>
+      <a class="btn sm" href="{{ url_for('insumo_form', prep=1) }}">＋ Crear preparación</a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -4,7 +4,8 @@ Cada función valida, mueve inventario y calcula costos. Si algo no cuadra
 lanza ErrorNegocio con la lista de mensajes para mostrar al usuario.
 El commit lo hace quien llama.
 """
-from models import (CompraInsumo, Produccion, ProduccionConsumo, Venta,
+from models import (CompraInsumo, Preparacion, PreparacionConsumo, Produccion,
+                    ProduccionConsumo, Venta,
                     VentaItem, ahora, db)
 
 TOL = 1e-9
@@ -202,3 +203,65 @@ def anular_produccion(prod):
         ins.costo_promedio = promedio_ponderado(ins.stock, ins.costo_promedio, c.cantidad, c.costo_unitario)
         ins.stock = (ins.stock or 0) + c.cantidad
     prod.anulada = True
+
+
+def registrar_preparacion(prep_insumo, cantidad, consumos, mano_obra=0.0, otros=0.0,
+                          otros_descripcion="", nota="", fecha=None, usuario_id=None):
+    """Elabora una preparación propia. consumos: dict {Insumo: cantidad_usada}."""
+    errores = []
+    if not prep_insumo or not prep_insumo.es_preparacion:
+        errores.append("Selecciona la preparación que elaboraste.")
+    if cantidad <= 0:
+        errores.append("La cantidad obtenida debe ser mayor a 0.")
+    consumos = {i: c for i, c in consumos.items() if c > 0}
+    if not consumos:
+        errores.append("Registra al menos un insumo utilizado.")
+    for insumo, cant in consumos.items():
+        if prep_insumo and insumo.id == prep_insumo.id:
+            errores.append("Una preparación no puede usarse a sí misma como ingrediente.")
+        elif cant > (insumo.stock or 0) + TOL:
+            errores.append(f"No hay suficiente «{insumo.nombre}»: necesitas {cant:g} {insumo.unidad} "
+                           f"y hay {insumo.stock:g}.")
+    if mano_obra < 0 or otros < 0:
+        errores.append("Los costos no pueden ser negativos.")
+    if otros > 0 and not (otros_descripcion or "").strip():
+        errores.append("Aclara en qué consisten los otros costos (gas, energía…).")
+    if errores:
+        raise ErrorNegocio(errores)
+
+    p = Preparacion(fecha=fecha or ahora(), insumo=prep_insumo, cantidad=cantidad,
+                    costo_mano_obra=mano_obra, costo_otros=otros,
+                    otros_descripcion=(otros_descripcion or "").strip() or None,
+                    nota=nota or None, usuario_id=usuario_id)
+    total_ins = 0.0
+    for insumo, cant in consumos.items():
+        cu = insumo.costo_promedio or 0
+        total_ins += cant * cu
+        insumo.stock = (insumo.stock or 0) - cant
+        p.consumos.append(PreparacionConsumo(insumo=insumo, cantidad=cant, costo_unitario=cu,
+                                             costo_total=cant * cu))
+    p.costo_insumos = total_ins
+    p.costo_total = total_ins + mano_obra + otros
+    p.costo_unitario = p.costo_total / cantidad
+    prep_insumo.costo_promedio = promedio_ponderado(prep_insumo.stock, prep_insumo.costo_promedio,
+                                                    cantidad, p.costo_unitario)
+    prep_insumo.stock = (prep_insumo.stock or 0) + cantidad
+    db.session.add(p)
+    return p
+
+
+def anular_preparacion(p):
+    if p.anulada:
+        raise ErrorNegocio("Esta preparación ya estaba anulada.")
+    ins = p.insumo
+    if (ins.stock or 0) + TOL < p.cantidad:
+        raise ErrorNegocio(
+            f"No se puede anular: de «{ins.nombre}» quedan {ins.stock:g} {ins.unidad} y esta preparación "
+            f"fue de {p.cantidad:g}. Parte ya se usó en producción; anula primero esas producciones.")
+    ins.costo_promedio = _quitar_de_promedio(ins.stock, ins.costo_promedio, p.cantidad, p.costo_unitario)
+    ins.stock = max((ins.stock or 0) - p.cantidad, 0)
+    for c in p.consumos:
+        i = c.insumo
+        i.costo_promedio = promedio_ponderado(i.stock, i.costo_promedio, c.cantidad, c.costo_unitario)
+        i.stock = (i.stock or 0) + c.cantidad
+    p.anulada = True

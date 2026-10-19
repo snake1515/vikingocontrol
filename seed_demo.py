@@ -7,8 +7,9 @@ import random
 from datetime import timedelta
 
 from app import app
-from models import Activo, Gasto, Insumo, Producto, RecetaItem, Usuario, ahora, db
-from services import registrar_compra, registrar_produccion, registrar_venta
+from models import Activo, Gasto, Insumo, PrepRecetaItem, Producto, RecetaItem, Usuario, ahora, db
+from services import (registrar_compra, registrar_preparacion, registrar_produccion,
+                      registrar_venta)
 
 random.seed(7)
 
@@ -116,6 +117,29 @@ with app.app_context():
             registrar_compra(i, round(objetivo - i.stock, 2), round((objetivo - i.stock) * i.costo_promedio),
                              "Distribuidora La Frontera", "Reposición", ahora(), marta.id)
     db.session.commit()
+    # Preparación propia: base de maíz (maizena + leche + azúcar), usada en el vikingo de maíz
+    maizena = Insumo(nombre="Maizena", unidad="kilogramo", stock_minimo=1)
+    db.session.add(maizena)
+    registrar_compra(maizena, 5, 42500, "Distribuidora La Frontera", "Compra inicial",
+                     ahora() - timedelta(days=6), admin.id)
+    base = Insumo(nombre="Base de maíz", unidad="litro", stock_minimo=3, es_preparacion=True)
+    base.receta_prep.append(PrepRecetaItem(componente=maizena, cantidad=0.06))
+    base.receta_prep.append(PrepRecetaItem(componente=ins["Leche entera"], cantidad=0.9))
+    base.receta_prep.append(PrepRecetaItem(componente=ins["Azúcar"], cantidad=0.08))
+    db.session.add(base)
+    db.session.flush()
+    registrar_preparacion(base, 10, {r.componente: r.cantidad * 10 for r in base.receta_prep},
+                          mano_obra=5000, otros=2000, otros_descripcion="Gas de la cocción",
+                          fecha=ahora() - timedelta(days=5), usuario_id=marta.id)
+    maiz = Producto(nombre="Vikingo de maíz", precio_venta=1500, stock_minimo=20)
+    maiz.receta.append(RecetaItem(insumo=ins["Bolsas para vikingo"], cantidad=1))
+    maiz.receta.append(RecetaItem(insumo=base, cantidad=0.09))
+    db.session.add(maiz)
+    db.session.flush()
+    registrar_produccion(maiz, 60, {ins["Bolsas para vikingo"]: 60, base: 5.4}, mo_tipo="unidad",
+                         mo_valor=100, energia=2000, fecha=ahora() - timedelta(days=4), usuario_id=marta.id)
+    db.session.commit()
+
     hoy = ahora().date()
     for nombre, valor, meses, dias in (("Selladora de impulso 30 cm", 350000, 24, 40),
                                        ("Congelador horizontal 300 L", 1800000, 60, 200),

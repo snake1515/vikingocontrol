@@ -113,6 +113,17 @@ class Insumo(db.Model):
     costo_promedio = db.Column(db.Float, nullable=False, default=0)
     stock_minimo = db.Column(db.Float, nullable=False, default=0)
     activo = db.Column(db.Boolean, nullable=False, default=True)
+    # Preparación propia (ej. base de maíz): no se compra ni se vende, se elabora con otros insumos
+    es_preparacion = db.Column(db.Boolean, nullable=False, default=False)
+
+    receta_prep = db.relationship(
+        "PrepRecetaItem", foreign_keys="PrepRecetaItem.preparacion_id", lazy="selectin",
+        cascade="all, delete-orphan", order_by="PrepRecetaItem.id",
+        back_populates="preparacion")
+
+    @property
+    def costo_receta_prep(self):
+        return sum(r.cantidad * (r.componente.costo_promedio or 0) for r in self.receta_prep)
 
     @property
     def valor_stock(self):
@@ -355,3 +366,51 @@ class Gasto(db.Model):
     valor = db.Column(db.Float, nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
     usuario = db.relationship("Usuario")
+
+
+class PrepRecetaItem(db.Model):
+    """Cuánto de cada insumo lleva 1 unidad de una preparación (ej. 1 litro de base de maíz)."""
+    __tablename__ = "vk_prep_receta"
+    id = db.Column(db.Integer, primary_key=True)
+    preparacion_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
+    componente_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)
+
+    preparacion = db.relationship("Insumo", foreign_keys=[preparacion_id], back_populates="receta_prep")
+    componente = db.relationship("Insumo", foreign_keys=[componente_id], lazy="joined")
+
+
+class Preparacion(db.Model):
+    """Elaboración de una preparación propia: insumos → litros/kilos de base."""
+    __tablename__ = "vk_preparaciones"
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, nullable=False, default=ahora, index=True)
+    insumo_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)
+    costo_insumos = db.Column(db.Float, nullable=False, default=0)
+    costo_mano_obra = db.Column(db.Float, nullable=False, default=0)
+    costo_otros = db.Column(db.Float, nullable=False, default=0)
+    otros_descripcion = db.Column(db.String(255))
+    costo_total = db.Column(db.Float, nullable=False, default=0)
+    costo_unitario = db.Column(db.Float, nullable=False, default=0)
+    nota = db.Column(db.String(255))
+    anulada = db.Column(db.Boolean, nullable=False, default=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+
+    insumo = db.relationship("Insumo", lazy="joined")
+    usuario = db.relationship("Usuario", lazy="joined")
+    consumos = db.relationship("PreparacionConsumo", back_populates="preparacion", lazy="selectin",
+                               cascade="all, delete-orphan")
+
+
+class PreparacionConsumo(db.Model):
+    __tablename__ = "vk_preparacion_consumos"
+    id = db.Column(db.Integer, primary_key=True)
+    preparacion_id = db.Column(db.Integer, db.ForeignKey("vk_preparaciones.id"), nullable=False)
+    insumo_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"), nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)
+    costo_unitario = db.Column(db.Float, nullable=False)
+    costo_total = db.Column(db.Float, nullable=False)
+
+    preparacion = db.relationship("Preparacion", back_populates="consumos")
+    insumo = db.relationship("Insumo", lazy="joined")

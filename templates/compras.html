@@ -23,7 +23,7 @@
 {% endif %}
 <div class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Fecha</th><th>Tipo</th><th>Qué se compró</th><th class="num">Cantidad</th><th class="num">Costo unit.</th><th class="num">Total</th><th>Proveedor</th><th>Nota</th>{% if puede('admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Qué se compró</th><th class="num">Cantidad</th><th class="num">Costo unit.</th><th class="num">Total</th><th>Proveedor</th><th>Nota</th><th></th></tr></thead>
     <tbody>
     {% for f in filas %}
       <tr class="{{ 'anulada' if f.anulada }}">
@@ -35,9 +35,11 @@
         <td class="num">{{ f.total|cop }}</td>
         <td>{{ f.proveedor or '—' }}</td>
         <td><small>{{ f.nota or '' }}</small>{% if f.anulada %} <span class="badge err">Anulada</span>{% endif %}</td>
+        {% if not puede('admin') %}<td class="r">{% if f.tipo == 'insumo' and not f.anulada %}<a class="btn sec sm" href="{{ url_for('compra_editar', id=f.obj.id) }}">Editar</a>{% endif %}</td>{% endif %}
         {% if puede('admin') %}<td class="r" style="white-space:nowrap">
           {% if f.tipo == 'insumo' and not f.anulada %}
-          <form method="post" action="{{ url_for('compra_anular', id=f.obj.id) }}" onsubmit="return confirm('¿Anular esta compra? Se descontará {{ f.cantidad }} de {{ f.nombre }} del inventario.')">
+          <a class="btn sec sm" href="{{ url_for('compra_editar', id=f.obj.id) }}">Editar</a>
+          <form method="post" action="{{ url_for('compra_anular', id=f.obj.id) }}" style="display:inline" onsubmit="return confirm('¿Anular esta compra? Se descontará {{ f.cantidad }} de {{ f.nombre }} del inventario.')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Anular</button>
           </form>
           {% elif f.tipo == 'equipo' %}

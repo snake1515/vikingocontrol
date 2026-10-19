@@ -1,34 +1,101 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Editar' if ins else 'Nuevo' }} insumo{% endblock %}
+{% block title %}{{ 'Editar' if ins else 'Nuevo' }} insumo o preparación{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>{{ 'Editar insumo' if ins else 'Nuevo insumo' }}</h1>
-  <p>{{ 'El stock y el costo cambian con compras y producción.' if ins else 'Ej: bolsas para vikingo, leche, azúcar, pulpa de fresa.' }}</p></div></div>
-<div class="card" style="max-width:640px">
-  <form method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="form-row">
-      <div class="field"><label>Nombre</label><input class="input" name="nombre" value="{{ request.form.nombre or (ins.nombre if ins) }}" required></div>
-      <div class="field"><label>Unidad de medida</label>
-        <select class="input" name="unidad">
-          {% set sel = request.form.unidad or (ins.unidad if ins else 'unidad') %}
-          {% for u in unidades %}<option {{ 'selected' if u == sel }}>{{ u }}</option>{% endfor %}
-        </select>
-        <div class="hint">Así lo vas a medir en la receta (ej: litro, kilogramo).</div>
+{% set es_prep = (request.form.es_preparacion if request.method == 'POST' else (ins.es_preparacion if ins else request.args.get('prep'))) %}
+<div class="page-head"><div><h1>{{ 'Editar ' ~ ('preparación' if ins and ins.es_preparacion else 'insumo') if ins else ('Nueva preparación' if es_prep else 'Nuevo insumo') }}</h1>
+  <p>{{ 'El stock y el costo cambian con compras, preparaciones y producción.' if ins else 'Ej: bolsas para vikingo, leche, azúcar, pulpa de fresa, o una base que tú preparas.' }}</p></div></div>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid g-main">
+    <div>
+      <div class="card">
+        <div class="form-row">
+          <div class="field"><label>Nombre</label><input class="input" name="nombre" value="{{ request.form.nombre or (ins.nombre if ins) or '' }}" placeholder="Ej: Leche entera / Base de maíz" required></div>
+          <div class="field"><label>Unidad de medida</label>
+            <select class="input" name="unidad" id="unidad">
+              {% set sel = request.form.unidad or (ins.unidad if ins else 'unidad') %}
+              {% for u in unidades %}<option {{ 'selected' if u == sel }}>{{ u }}</option>{% endfor %}
+            </select>
+            <div class="hint">Así lo vas a medir en la receta (ej: litro, kilogramo).</div>
+          </div>
+        </div>
+        <div class="field" style="max-width:260px"><label>Stock mínimo (alerta)</label>
+          <input class="input" type="number" step="any" min="0" name="stock_minimo" value="{{ request.form.stock_minimo or ('%g'|format(ins.stock_minimo) if ins else '') }}">
+        </div>
+        <label class="check" style="margin-bottom:6px"><input type="checkbox" name="es_preparacion" value="1" id="esPrep" {{ 'checked' if es_prep }}>
+          <span>Es una <b>preparación propia</b> (no se compra ni se vende)</span></label>
+        <div class="hint" style="margin:0 0 4px 24px">Ej: base de maíz hecha con maizena y leche. Se elabora en <b>Preparaciones</b> y se usa en la receta de los vikingos.</div>
       </div>
+
+      <div class="card" id="recetaBox">
+        <div class="card-head"><h2>Receta por 1 <span class="uTxt">unidad</span> de preparación</h2></div>
+        <p class="hint" style="margin:-6px 0 10px">Ej: 1 litro de base de maíz lleva 0,05 kg de maizena y 0,9 litros de leche.</p>
+        <div class="table-wrap"><table class="lines">
+          <thead><tr><th>Insumo</th><th class="num">Cantidad</th><th>Unidad</th><th class="num">Costo</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <button type="button" class="btn sec sm" id="add" style="margin-top:10px">＋ Agregar insumo</button>
+        <p class="hint" style="margin-top:10px">Costo estimado por <span class="uTxt">unidad</span> (solo insumos): <b id="cRec">$ 0</b></p>
+      </div>
+
+      {% if not ins %}
+      <div class="card" id="iniBox">
+        <div class="note" style="margin-bottom:14px"><b>Inventario inicial (opcional).</b> Si ya tienes este insumo en bodega, escribe la cantidad, lo que te costó en total y la fecha en que lo compraste.</div>
+        <div class="form-row">
+          <div class="field"><label>Cantidad que tienes</label><input class="input" type="number" step="any" min="0" name="cantidad_inicial" value="{{ request.form.cantidad_inicial }}"></div>
+          <div class="field"><label>Costo total ($)</label><input class="input" type="number" step="any" min="0" name="costo_inicial" value="{{ request.form.costo_inicial }}"></div>
+          <div class="field"><label>Fecha de compra</label><input class="input" type="date" name="fecha_inicial" max="{{ hoy }}" value="{{ request.form.fecha_inicial or hoy }}"></div>
+        </div>
+      </div>
+      {% else %}
+      <div class="note" style="margin-top:16px">Stock actual: <b>{{ ins.stock|num(3) }} {{ ins.unidad }}</b> · Costo promedio: <b>{{ ins.costo_promedio|cop }}</b> por {{ ins.unidad }}</div>
+      {% endif %}
+      <div class="actions" style="margin-top:16px"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('insumos') }}">Cancelar</a></div>
     </div>
-    <div class="field" style="max-width:260px"><label>Stock mínimo (alerta)</label>
-      <input class="input" type="number" step="any" min="0" name="stock_minimo" value="{{ request.form.stock_minimo or ('%g'|format(ins.stock_minimo) if ins else '') }}">
+    <div class="card summary">
+      <h2>¿Insumo o preparación?</h2>
+      <div class="sum-line"><span><b>Insumo</b><br><small>Se compra (leche, maizena, bolsas). Entra por Compras.</small></span></div>
+      <div class="sum-line"><span><b>Preparación</b><br><small>Se hace con otros insumos (base de maíz). Entra por Preparaciones, con su costo real.</small></span></div>
+      <p class="hint">Las dos se usan igual en la receta de los vikingos.</p>
     </div>
-    {% if not ins %}
-    <div class="note" style="margin-bottom:14px"><b>Inventario inicial (opcional).</b> Si ya tienes este insumo en bodega, escribe la cantidad y lo que te costó en total.</div>
-    <div class="form-row">
-      <div class="field"><label>Cantidad que tienes</label><input class="input" type="number" step="any" min="0" name="cantidad_inicial" value="{{ request.form.cantidad_inicial }}"></div>
-      <div class="field"><label>Costo total ($)</label><input class="input" type="number" step="any" min="0" name="costo_inicial" value="{{ request.form.costo_inicial }}"></div>
-    </div>
-    {% else %}
-    <div class="note" style="margin-bottom:14px">Stock actual: <b>{{ ins.stock|num(3) }} {{ ins.unidad }}</b> · Costo promedio: <b>{{ ins.costo_promedio|cop }}</b> por {{ ins.unidad }}</div>
-    {% endif %}
-    <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('insumos') }}">Cancelar</a></div>
-  </form>
-</div>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const INS = {{ componentes|tojson }};
+const REC = {{ receta_prep|tojson }};
+const $ = id => document.getElementById(id);
+const rows = $('rows');
+const byId = id => INS.find(i => i.id == id);
+function opts(sel) { return '<option value="">— Elegir —</option>' + INS.map(i => `<option value="${i.id}" ${i.id == sel ? 'selected' : ''}>${i.nombre}</option>`).join(''); }
+function addRow(sel = '', cant = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td style="min-width:190px"><select class="input" name="prep_insumo[]">${opts(sel)}</select></td>
+    <td><input class="input r" type="number" step="any" min="0" name="prep_cantidad[]" value="${cant}" style="min-width:90px"></td>
+    <td class="un muted"></td><td class="num co">—</td><td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
+  tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
+  tr.querySelectorAll('input,select').forEach(e => e.addEventListener('input', calc));
+  rows.appendChild(tr); calc();
+}
+function calc() {
+  let t = 0;
+  rows.querySelectorAll('tr').forEach(tr => {
+    const i = byId(tr.querySelector('select').value), q = val(tr.querySelector('input'));
+    tr.querySelector('.un').textContent = i ? i.unidad : ''; const c = i ? q * i.costo : 0; t += c;
+    tr.querySelector('.co').textContent = i ? COP(c) : '—';
+  });
+  $('cRec').textContent = COP(t);
+  document.querySelectorAll('.uTxt').forEach(e => e.textContent = $('unidad').value);
+}
+function ui() {
+  const p = $('esPrep').checked;
+  $('recetaBox').style.display = p ? '' : 'none';
+  if ($('iniBox')) $('iniBox').style.display = p ? 'none' : '';
+}
+$('esPrep').addEventListener('change', ui); $('unidad').addEventListener('change', calc);
+$('add').onclick = () => addRow();
+if (REC.length) REC.forEach(r => addRow(r.insumo_id, r.cantidad)); else addRow();
+ui();
+</script>
 {% endblock %}

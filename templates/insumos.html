@@ -5,6 +5,7 @@
   <div><h1>Insumos</h1><p>Materia prima en bodega, valorizada a costo promedio</p></div>
   <div class="actions">
     <a class="btn sec" href="{{ url_for('compra_nueva') }}">⇣ Registrar compra</a>
+    <a class="btn sec" href="{{ url_for('insumo_form', prep=1) }}">＋ Nueva preparación</a>
     <a class="btn" href="{{ url_for('insumo_form') }}">＋ Nuevo insumo</a>
   </div>
 </div>
@@ -18,13 +19,14 @@
     <tbody>
     {% for i in items %}
       <tr>
-        <td><b>{{ i.nombre }}</b></td>
+        <td><b>{{ i.nombre }}</b>{% if i.es_preparacion %} <span class="badge berry">Preparación</span>{% endif %}</td>
         <td class="num">{{ i.stock|num(3) }}</td>
         <td>{{ i.unidad }}</td>
         <td class="num">{{ i.costo_promedio|cop }}</td>
         <td class="num">{{ i.valor_stock|cop }}</td>
         <td>{% if i.stock <= 0 %}<span class="badge err">Agotado</span>{% elif i.bajo_minimo %}<span class="badge warn">Bajo mínimo</span>{% else %}<span class="badge ok">OK</span>{% endif %}</td>
         <td class="r">
+          {% if i.es_preparacion %}<a class="btn sm" href="{{ url_for('preparacion_nueva', insumo=i.id) }}">Preparar</a>{% endif %}
           <a class="btn sec sm" href="{{ url_for('insumo_form', id=i.id) }}">Editar</a>
           {% if puede('admin') %}
           <form method="post" action="{{ url_for('insumo_eliminar', id=i.id) }}" style="display:inline" onsubmit="return confirm('¿Eliminar {{ i.nombre }}?')">

@@ -43,6 +43,7 @@
       {% if puede('admin', 'produccion') %}
       <div class="nav-sep"></div>
       <a href="{{ url_for('producciones') }}" class="{{ 'on' if ep.startswith('produccion') }}"><span class="ico">⚙</span>Producción</a>
+      <a href="{{ url_for('preparaciones') }}" class="{{ 'on' if ep.startswith('preparacion') }}"><span class="ico">◍</span>Preparaciones</a>
       <a href="{{ url_for('productos') }}" class="{{ 'on' if ep.startswith('producto') }}"><span class="ico">❄</span>Vikingos</a>
       <a href="{{ url_for('insumos') }}" class="{{ 'on' if ep.startswith('insumo') }}"><span class="ico">▤</span>Insumos</a>
       <a href="{{ url_for('compras') }}" class="{{ 'on' if ep.startswith('compra') }}"><span class="ico">⇣</span>Compras</a>
