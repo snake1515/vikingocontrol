@@ -17,7 +17,7 @@
   <div class="card">
     <div class="card-head"><h2>Preparaciones elaboradas</h2></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Fecha</th><th>Preparación</th><th class="num">Cantidad</th><th class="num">Costo total</th><th class="num">Costo por unidad</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Preparación</th><th class="num">Cantidad</th><th class="num">Costo total</th><th class="num">Costo por unidad</th><th></th></tr></thead>
       <tbody>
       {% for p in items %}
         <tr class="{{ 'anulada' if p.anulada }}">
@@ -26,8 +26,9 @@
           <td class="num">{{ p.cantidad|num(3) }} {{ p.insumo.unidad }}</td>
           <td class="num">{{ p.costo_total|cop }}</td>
           <td class="num">{{ p.costo_unitario|cop }} / {{ p.insumo.unidad }}</td>
+          <td class="r">{% if not p.anulada %}<a class="btn sec sm" href="{{ url_for('preparacion_editar', id=p.id) }}">Editar</a>{% endif %}</td>
         </tr>
-      {% else %}<tr><td colspan="5" class="empty">No hay preparaciones en este periodo.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty">No hay preparaciones en este periodo.</td></tr>{% endfor %}
       </tbody>
     </table></div>
   </div>

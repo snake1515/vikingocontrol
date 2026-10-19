@@ -5,6 +5,7 @@
   <div><h1>Producción #{{ p.id }} · {{ p.producto.nombre }} {% if p.anulada %}<span class="badge err">Anulada</span>{% endif %}</h1>
     <p>{{ p.fecha|fecha(True) }}{% if p.usuario %} · registró {{ p.usuario.nombre }}{% endif %}</p></div>
   <div class="actions"><a class="btn sec" href="{{ url_for('producciones') }}">← Volver</a>
+    {% if not p.anulada %}<a class="btn sec" href="{{ url_for('produccion_editar', id=p.id) }}">Editar fecha</a>{% endif %}
     <a class="btn" href="{{ url_for('produccion_nueva', producto=p.producto_id) }}">Producir otra vez</a></div>
 </div>
 

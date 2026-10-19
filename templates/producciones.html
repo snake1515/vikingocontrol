@@ -20,7 +20,7 @@
 </div>
 <div class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Fecha</th><th>Referencia</th><th class="num">Vikingos</th><th class="num">Insumos</th><th class="num">Mano obra</th><th class="num">Indirectos</th><th class="num">Total</th><th class="num">C/u</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Referencia</th><th class="num">Vikingos</th><th class="num">Insumos</th><th class="num">Mano obra</th><th class="num">Indirectos</th><th class="num">Total</th><th class="num">C/u</th><th></th></tr></thead>
     <tbody>
     {% for p in items %}
       <tr class="{{ 'anulada' if p.anulada }}">
@@ -32,8 +32,9 @@
         <td class="num">{{ p.costo_indirectos|cop }}</td>
         <td class="num"><b>{{ p.costo_total|cop }}</b></td>
         <td class="num">{{ p.costo_unitario|cop }}</td>
+        <td class="r">{% if not p.anulada %}<a class="btn sec sm" href="{{ url_for('produccion_editar', id=p.id) }}">Editar</a>{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="8" class="empty">No hay producción en este periodo.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="9" class="empty">No hay producción en este periodo.</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </div>

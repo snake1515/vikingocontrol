@@ -5,6 +5,7 @@
   <div><h1>Preparación #{{ p.id }} · {{ p.insumo.nombre }} {% if p.anulada %}<span class="badge err">Anulada</span>{% endif %}</h1>
     <p>{{ p.fecha|fecha(True) }}{% if p.usuario %} · registró {{ p.usuario.nombre }}{% endif %}</p></div>
   <div class="actions"><a class="btn sec" href="{{ url_for('preparaciones') }}">← Volver</a>
+    {% if not p.anulada %}<a class="btn sec" href="{{ url_for('preparacion_editar', id=p.id) }}">Editar fecha</a>{% endif %}
     <a class="btn" href="{{ url_for('preparacion_nueva', insumo=p.insumo_id) }}">Preparar otra vez</a></div>
 </div>
 <div class="card">

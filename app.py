@@ -1266,6 +1266,54 @@ def preparacion_detalle(id):
     return render_template("preparacion_detalle.html", p=p)
 
 
+def _editar_fecha_nota(obj, volver):
+    """Formulario común para corregir la fecha y la nota de un movimiento."""
+    if obj.anulada:
+        flash("Este movimiento está anulado; no se puede editar.", "error")
+        return redirect(volver)
+    if request.method == "POST":
+        nueva = _fecha(request.form.get("fecha"))
+        if not nueva:
+            flash("Indica una fecha válida.", "error")
+        elif nueva > ahora().date():
+            flash("La fecha no puede ser futura.", "error")
+        else:
+            if nueva != obj.fecha.date():
+                obj.fecha = fecha_form(nueva.isoformat())
+            obj.nota = request.form.get("nota", "").strip()[:255] or None
+            db.session.commit()
+            flash("Cambios guardados.", "ok")
+            return redirect(volver)
+    return None
+
+
+@app.route("/preparaciones/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin", "produccion")
+def preparacion_editar(id):
+    p = db.session.get(Preparacion, id) or abort(404)
+    r = _editar_fecha_nota(p, url_for("preparacion_detalle", id=id))
+    if r:
+        return r
+    return render_template("editar_fecha.html", titulo=f"Editar preparación #{p.id}",
+                           detalle=f"{p.insumo.nombre} · {filtro_num(p.cantidad, 3)} {p.insumo.unidad} · "
+                                   f"{filtro_cop(p.costo_total)}",
+                           obj=p, volver=url_for("preparacion_detalle", id=id),
+                           ayuda="Si la cantidad o los insumos están mal, se anula la preparación y se registra de nuevo.")
+
+
+@app.route("/produccion/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin", "produccion")
+def produccion_editar(id):
+    p = db.session.get(Produccion, id) or abort(404)
+    r = _editar_fecha_nota(p, url_for("produccion_detalle", id=id))
+    if r:
+        return r
+    return render_template("editar_fecha.html", titulo=f"Editar producción #{p.id}",
+                           detalle=f"{p.producto.nombre} · {p.cantidad} vikingos · {filtro_cop(p.costo_total)}",
+                           obj=p, volver=url_for("produccion_detalle", id=id),
+                           ayuda="Si la cantidad, los insumos o los costos están mal, se anula la producción y se registra de nuevo.")
+
+
 @app.route("/preparaciones/<int:id>/anular", methods=["POST"])
 @rol_requerido("admin")
 def preparacion_anular(id):
