@@ -268,7 +268,8 @@ class Venta(db.Model):
     __tablename__ = "vk_ventas"
     id = db.Column(db.Integer, primary_key=True)
     fecha = db.Column(db.DateTime, nullable=False, default=ahora, index=True)
-    cliente = db.Column(db.String(120))
+    cliente = db.Column(db.String(120))  # nombre tal como quedó en la venta
+    cliente_id = db.Column(db.Integer, db.ForeignKey("vk_clientes.id"), index=True)
     metodo_pago = db.Column(db.String(30), default="Efectivo")
     nota = db.Column(db.String(255))
     total = db.Column(db.Float, nullable=False, default=0)
@@ -297,6 +298,7 @@ class VentaItem(db.Model):
     costo_unitario = db.Column(db.Float, nullable=False)
     subtotal = db.Column(db.Float, nullable=False)
     costo = db.Column(db.Float, nullable=False)
+    bonificado = db.Column(db.Boolean, nullable=False, default=False)  # regalo/bonificación
 
     venta = db.relationship("Venta", back_populates="items")
     producto = db.relationship("Producto", lazy="joined")
@@ -418,3 +420,40 @@ class PreparacionConsumo(db.Model):
 
     preparacion = db.relationship("Preparacion", back_populates="consumos")
     insumo = db.relationship("Insumo", lazy="joined")
+
+
+TIPOS_CLIENTE = ["Tienda", "Colegio", "Particular", "Distribuidor", "Empresa", "Otro"]
+
+
+class Cliente(db.Model):
+    __tablename__ = "vk_clientes"
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    telefono = db.Column(db.String(40))
+    direccion = db.Column(db.String(160))
+    tipo = db.Column(db.String(30), default="Tienda")
+    meta_mensual = db.Column(db.Integer)  # vikingos al mes para ganar bonificación
+    nota = db.Column(db.String(255))
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    creado = db.Column(db.DateTime, default=ahora)
+
+    @property
+    def whatsapp(self):
+        dig = "".join(ch for ch in (self.telefono or "") if ch.isdigit())
+        if not dig:
+            return None
+        if len(dig) == 10 and dig.startswith("3"):
+            dig = "57" + dig
+        return f"https://wa.me/{dig}"
+
+
+class Bonificacion(db.Model):
+    """Vikingos que se le regalan a un cliente (ej. por cumplir su meta)."""
+    __tablename__ = "vk_bonificaciones"
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey("vk_clientes.id"), nullable=False, index=True)
+    fecha = db.Column(db.Date, nullable=False)
+    cantidad = db.Column(db.Integer, nullable=False)
+    motivo = db.Column(db.String(255))
+    usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    cliente = db.relationship("Cliente")

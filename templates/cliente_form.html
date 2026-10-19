@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if c else 'Nuevo' }} cliente{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'Editar cliente' if c else 'Nuevo cliente' }}</h1><p>Tiendas, colegios y personas que te compran vikingos.</p></div></div>
+<div class="card" style="max-width:680px">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+      <div class="field"><label>Nombre</label><input class="input" name="nombre" value="{{ request.form.nombre or (c.nombre if c else '') }}" placeholder="Ej: Tienda Don Pedro" required></div>
+      <div class="field"><label>Tipo</label><select class="input" name="tipo">
+        {% set sel = request.form.tipo or (c.tipo if c else 'Tienda') %}{% for t in tipos %}<option {{ 'selected' if t == sel }}>{{ t }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Teléfono / WhatsApp</label><input class="input" name="telefono" value="{{ request.form.telefono or (c.telefono or '' if c else '') }}" placeholder="Ej: 300 123 4567"></div>
+      <div class="field"><label>Dirección o barrio</label><input class="input" name="direccion" value="{{ request.form.direccion or (c.direccion or '' if c else '') }}" placeholder="Opcional"></div>
+    </div>
+    <div class="field" style="max-width:300px"><label>Meta mensual (vikingos)</label><input class="input" type="number" min="0" step="1" name="meta_mensual" value="{{ request.form.meta_mensual or (c.meta_mensual or '' if c else '') }}" placeholder="Ej: 300">
+      <div class="hint">Si la cumple en el mes, aparece como «Cumplida» para bonificarlo. Déjala vacía si no aplica.</div></div>
+    <div class="field"><label>Nota</label><input class="input" name="nota" value="{{ request.form.nota or (c.nota or '' if c else '') }}" placeholder="Ej: paga los viernes, prefiere fresa"></div>
+    <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('cliente_detalle', id=c.id) if c else url_for('clientes') }}">Cancelar</a></div>
+  </form>
+</div>
+{% if c and puede('admin') %}
+<form method="post" action="{{ url_for('cliente_eliminar', id=c.id) }}" style="margin-top:16px" onsubmit="return confirm('¿Retirar a {{ c.nombre }} de la cartera? Sus ventas se conservan.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger sm">Retirar de la cartera</button>
+</form>
+{% endif %}
+{% endblock %}

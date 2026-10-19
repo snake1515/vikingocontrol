@@ -7,7 +7,7 @@ import random
 from datetime import timedelta
 
 from app import app
-from models import Activo, Gasto, Insumo, PrepRecetaItem, Producto, RecetaItem, Usuario, ahora, db
+from models import Activo, Bonificacion, Cliente, Gasto, Insumo, PrepRecetaItem, Venta, Producto, RecetaItem, Usuario, ahora, db
 from services import (registrar_compra, registrar_preparacion, registrar_produccion,
                       registrar_venta)
 
@@ -157,5 +157,23 @@ with app.app_context():
                                    (5, "Publicidad", "Pauta Instagram semana", 40000),
                                    (3, "Papelería y empaques", "Bolsas para domicilio", 15000)):
         db.session.add(Gasto(fecha=hoy - timedelta(days=dias), categoria=cat, descripcion=desc, valor=valor))
+    # Cartera de clientes a partir de las ventas
+    metas = {"Tienda Don Pedro": 300, "Colegio San José": 250}
+    clientes = {}
+    for v in Venta.query.all():
+        if v.cliente:
+            c = clientes.get(v.cliente)
+            if not c:
+                c = Cliente(nombre=v.cliente, tipo="Colegio" if "Colegio" in v.cliente else "Tienda",
+                            telefono="300 555 0101" if "Pedro" in v.cliente else None,
+                            meta_mensual=metas.get(v.cliente))
+                db.session.add(c)
+                db.session.flush()
+                clientes[v.cliente] = c
+            v.cliente_id = c.id
+    if "Tienda Don Pedro" in clientes:
+        db.session.add(Bonificacion(cliente_id=clientes["Tienda Don Pedro"].id, fecha=hoy, cantidad=10,
+                                    motivo="Cumplió la meta del mes pasado"))
+    db.session.add(Cliente(nombre="Tienda La Esquina", tipo="Tienda", telefono="311 222 3344", meta_mensual=150))
     db.session.commit()
     print("Datos demo cargados. Usuarios: admin / marta / julian (clave demo: demo123 para marta y julian).")

@@ -39,6 +39,7 @@
       {% if puede('admin', 'vendedor') %}
       <a href="{{ url_for('venta_nueva') }}" class="{{ 'on' if ep == 'venta_nueva' }}"><span class="ico">＋</span>Nueva venta</a>
       <a href="{{ url_for('ventas') }}" class="{{ 'on' if ep in ('ventas', 'venta_detalle') }}"><span class="ico">$</span>Ventas</a>
+      <a href="{{ url_for('clientes') }}" class="{{ 'on' if ep.startswith('cliente') }}"><span class="ico">♟</span>Clientes</a>
       {% endif %}
       {% if puede('admin', 'produccion') %}
       <div class="nav-sep"></div>

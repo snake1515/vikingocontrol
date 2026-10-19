@@ -116,22 +116,29 @@ def registrar_produccion(producto, cantidad, consumos, mo_tipo="ninguna",
 
 
 def registrar_venta(items, cliente="", metodo_pago="Efectivo", nota="",
-                    fecha=None, usuario_id=None):
-    """items: lista de (Producto, cantidad, precio_unitario)."""
+                    fecha=None, usuario_id=None, cliente_id=None):
+    """items: lista de (Producto, cantidad, precio_unitario[, bonificado])."""
     errores = []
     agrupado = {}
-    for producto, cant, precio in items:
+    por_producto = {}
+    for item in items:
+        producto, cant, precio = item[:3]
+        bonif = bool(item[3]) if len(item) > 3 else False
         if not producto or cant <= 0:
             continue
+        if bonif:
+            precio = 0.0
         if precio < 0:
             errores.append(f"El precio de «{producto.nombre}» no puede ser negativo.")
-        if producto in agrupado:
-            agrupado[producto][0] += cant
+        clave = (producto, bonif)
+        if clave in agrupado:
+            agrupado[clave][0] += cant
         else:
-            agrupado[producto] = [cant, precio]
+            agrupado[clave] = [cant, precio]
+        por_producto[producto] = por_producto.get(producto, 0) + cant
     if not agrupado:
         errores.append("Agrega al menos un vikingo a la venta.")
-    for producto, (cant, _) in agrupado.items():
+    for producto, cant in por_producto.items():
         if cant > (producto.stock or 0):
             errores.append(
                 f"Solo hay {producto.stock} unidades de «{producto.nombre}» "
@@ -139,12 +146,12 @@ def registrar_venta(items, cliente="", metodo_pago="Efectivo", nota="",
     if errores:
         raise ErrorNegocio(errores)
 
-    v = Venta(fecha=fecha or ahora(), cliente=(cliente or "").strip() or None,
+    v = Venta(fecha=fecha or ahora(), cliente=(cliente or "").strip() or None, cliente_id=cliente_id,
               metodo_pago=metodo_pago, nota=nota or None, usuario_id=usuario_id)
     total = costo = 0.0
-    for producto, (cant, precio) in agrupado.items():
+    for (producto, bonif), (cant, precio) in agrupado.items():
         cu = producto.costo_promedio or 0
-        it = VentaItem(producto=producto, cantidad=cant, precio_unitario=precio,
+        it = VentaItem(producto=producto, cantidad=cant, precio_unitario=precio, bonificado=bonif,
                        costo_unitario=cu, subtotal=cant * precio, costo=cant * cu)
         v.items.append(it)
         total += it.subtotal

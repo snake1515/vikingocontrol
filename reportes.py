@@ -140,7 +140,15 @@ def generar(desde, hasta, agrupar):
             .group_by(Producto.nombre).order_by(func.sum(VentaItem.cantidad).desc()).all())
     por_ref = [dict(nombre=r[0], unidades=int(r[1] or 0), ventas=r[2] or 0,
                     costo=r[3] or 0, ganancia=(r[2] or 0) - (r[3] or 0)) for r in refs]
-    return dict(filas=salida, tot=dict(tot), por_ref=por_ref,
+    clis = (db.session.query(func.coalesce(Venta.cliente, "Cliente general"), func.count(func.distinct(Venta.id)),
+                             func.sum(VentaItem.cantidad), func.sum(VentaItem.subtotal))
+            .select_from(Venta).join(VentaItem, VentaItem.venta_id == Venta.id)
+            .filter(Venta.anulada.is_(False), Venta.fecha >= ini, Venta.fecha < fin)
+            .group_by(func.coalesce(Venta.cliente, "Cliente general"))
+            .order_by(func.sum(VentaItem.cantidad).desc()).all())
+    por_cliente = [dict(nombre=r[0], compras=int(r[1] or 0), unidades=int(r[2] or 0), ventas=r[3] or 0)
+                   for r in clis]
+    return dict(filas=salida, tot=dict(tot), por_ref=por_ref, por_cliente=por_cliente,
                 gastos_cat=sorted(gastos_cat.items(), key=lambda x: -x[1]))
 
 
@@ -235,6 +243,17 @@ def excel(rep, desde, hasta, agrupar, negocio):
             w2.cell(row=i, column=j, value=round(p[k], 2)).number_format = FMT_COP
         w2.cell(row=i, column=6, value=f'=IF(C{i}=0,"",E{i}/C{i}*100)').number_format = FMT_PCT
     _anchos(w2, [32, 16, 16, 16, 16, 10])
+
+    # Por cliente
+    wc = wb.create_sheet("Por cliente")
+    _encabezado(wc, 1, ["Cliente", "Compras", "Vikingos", "Ventas"])
+    for i, cl in enumerate(rep.get("por_cliente", []), 2):
+        wc.cell(row=i, column=1, value=cl["nombre"])
+        wc.cell(row=i, column=2, value=cl["compras"]).number_format = FMT_NUM
+        wc.cell(row=i, column=3, value=cl["unidades"]).number_format = FMT_NUM
+        wc.cell(row=i, column=4, value=round(cl["ventas"], 2)).number_format = FMT_COP
+    _anchos(wc, [32, 12, 12, 16])
+    wc.freeze_panes = "A2"
 
     # Gastos por categoría
     w3 = wb.create_sheet("Gastos")

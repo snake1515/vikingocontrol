@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ c.nombre }}{% endblock %}
+{% block content %}
+<style>
+  .mes-bars { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding-top: 10px; }
+  .mes-bars .b { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .mes-bars .b span { width: 100%; max-width: 46px; background: var(--accent); border-radius: 6px 6px 0 0; min-height: 2px; }
+  .mes-bars .b small { margin-top: 6px; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+  .mes-bars .b em { font-style: normal; font-weight: 800; font-size: .8rem; margin-bottom: 4px; }
+</style>
+<div class="page-head">
+  <div><h1>{{ c.nombre }} <span class="badge {{ m.estado_cls }}">{{ m.estado_txt }}</span></h1>
+    <p>{{ c.tipo or '' }}{% if c.telefono %} · {{ c.telefono }}{% endif %}{% if c.direccion %} · {{ c.direccion }}{% endif %}{% if c.nota %} · <i>{{ c.nota }}</i>{% endif %}</p></div>
+  <div class="actions">
+    {% if c.whatsapp %}<a class="btn sec" href="{{ c.whatsapp }}" target="_blank">WhatsApp</a>{% endif %}
+    <a class="btn sec" href="{{ url_for('cliente_form', id=c.id) }}">Editar</a>
+    <a class="btn" href="{{ url_for('venta_nueva', cliente=c.id) }}">＋ Venderle</a>
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="lbl">Últimos 30 días</div><div class="val">{{ m.u30|num }} <small style="font-size:.9rem">vikingos</small></div>
+    <div class="sub">{{ m.v30|cop }}{% if m.tendencia is not none %} · {% if m.tendencia >= 0 %}<span class="pos">▲ {{ m.tendencia|num(0) }}%</span>{% else %}<span class="neg">▼ {{ (-m.tendencia)|num(0) }}%</span>{% endif %} vs. 30 días antes{% endif %}</div></div>
+  <div class="kpi"><div class="lbl">Frecuencia</div><div class="val">{{ ('a diario' if m.frecuencia < 1.5 else 'cada ' ~ (m.frecuencia|num(0)) ~ ' días') if m.frecuencia else '—' }}</div>
+    <div class="sub">{% if m.ultima %}Última compra {{ 'hoy' if m.dias == 0 else ('ayer' if m.dias == 1 else 'hace ' ~ m.dias ~ ' días') }}{% else %}Aún no compra{% endif %}</div></div>
+  <div class="kpi"><div class="lbl">Meta del mes</div><div class="val">{% if m.meta %}{{ m.mes|num }} / {{ m.meta|num }}{% else %}—{% endif %}</div>
+    <div class="sub">{% if m.meta_ok %}<span class="pos">✔ Cumplida: se puede bonificar</span>{% elif m.meta %}Le faltan {{ (m.meta - m.mes)|num }} vikingos{% else %}<a href="{{ url_for('cliente_form', id=c.id) }}">Ponerle meta</a>{% endif %}</div></div>
+  <div class="kpi hl"><div class="lbl">Histórico</div><div class="val">{{ m.total_u|num }}</div><div class="sub">vikingos · {{ m.total_v|cop }} · {{ m.compras }} compras</div></div>
+</div>
+
+<div class="grid g-main">
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>Vikingos comprados por mes</h2></div>
+      <div class="mes-bars">
+        {% for x in meses %}<div class="b"><em>{{ x.u|num if x.u else '' }}</em><span style="height:{{ (x.u / max_mes * 100)|round(1) }}%"></span><small>{{ x.etq }}</small></div>{% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Últimas compras</h2></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Total</th></tr></thead>
+        <tbody>{% for v in ventas %}
+          <tr class="{{ 'anulada' if v.anulada }}"><td><a href="{{ url_for('venta_detalle', id=v.id) }}">{{ v.fecha|fecha }}</a></td>
+            <td><small>{% for it in v.items %}{{ it.cantidad }} {{ it.producto.nombre }}{% if it.bonificado %} 🎁{% endif %}{{ ', ' if not loop.last }}{% endfor %}</small></td>
+            <td class="num">{{ v.total|cop }}</td></tr>
+        {% else %}<tr><td colspan="3" class="empty">Aún no tiene compras registradas.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>Bonificaciones</h2>{% if m.bonif_pend %}<span class="badge berry">🎁 {{ m.bonif_pend }} pendientes</span>{% endif %}</div>
+      {% if puede('admin') %}
+      <form method="post" action="{{ url_for('cliente_bonificar', id=c.id) }}" style="margin-bottom:12px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-row">
+          <div class="field"><label>Vikingos de regalo</label><input class="input" type="number" min="1" step="1" name="cantidad" placeholder="Ej: 10" required></div>
+          <div class="field"><label>Motivo</label><input class="input" name="motivo" value="{{ 'Cumplió la meta de ' ~ m.meta ~ ' vikingos' if m.meta_ok else '' }}" placeholder="Ej: cumplió la meta"></div>
+        </div>
+        <button class="btn sm">🎁 Bonificar</button>
+      </form>
+      {% endif %}
+      <p class="hint">Se entregan en su próxima compra: al venderle, la app avisa y los marca como regalo.</p>
+      {% for b in bonifs %}<div class="sum-line"><span>{{ b.fecha.strftime('%d/%m/%Y') }} · {{ b.motivo or 'Bonificación' }}</span><b>{{ b.cantidad }}</b></div>{% endfor %}
+      {% if bonifs %}<div class="sum-line"><span>Entregadas</span><b>{{ m.bonif_entregadas }}</b></div>{% endif %}
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Sabores que más compra</h2></div>
+      {% for nom, u in favoritos %}<div class="sum-line"><span>{{ nom }}</span><b>{{ u|num }}</b></div>
+      {% else %}<p class="hint">Sin compras aún.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -12,13 +12,14 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
-from models import (CATEGORIAS_GASTO, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
+from models import (CATEGORIAS_GASTO, TIPOS_CLIENTE, Bonificacion, Cliente, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
                     CompraInsumo, Gasto,
                     Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
                     VentaItem, ahora, db)
 import comprobantes
 import reportes as rpt
+import clientes_calc as ccalc
 from unidades import ABREV, compatibles, convertir, unidad_valida
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
 from services import (ErrorNegocio, anular_compra, anular_preparacion, anular_produccion,
@@ -588,6 +589,132 @@ def reportes_excel():
                     headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
+# ----------------------------------------------------------------- clientes
+@app.route("/clientes")
+@rol_requerido("admin", "vendedor")
+def clientes():
+    hoy_d = ahora().date()
+    q = request.args.get("q", "").strip()
+    estado = request.args.get("estado", "")
+    clis = Cliente.query.filter_by(activo=True).order_by(Cliente.nombre).all()
+    met = ccalc.metricas(clis, hoy_d)
+    filas = [dict(c=c, **met[c.id]) for c in clis
+             if (not q or q.lower() in c.nombre.lower() or q in (c.telefono or ""))
+             and (not estado or met[c.id]["estado"] == estado or (estado == "meta" and met[c.id]["meta_ok"])
+                  or (estado == "bonif" and met[c.id]["bonif_pend"]))]
+    filas.sort(key=lambda f: (-f["u30"], -(f["total_u"])))
+    todos = list(met.values())
+    cuenta = {k: sum(1 for m in todos if m["estado"] == k) for k in ccalc.ESTADOS}
+    cuenta["meta"] = sum(1 for m in todos if m["meta_ok"])
+    cuenta["bonif"] = sum(1 for m in todos if m["bonif_pend"])
+    sin_vincular = Venta.query.filter(Venta.cliente_id.is_(None), Venta.cliente.isnot(None),
+                                      Venta.cliente != "").count()
+    return render_template("clientes.html", filas=filas, q=q, estado=estado, cuenta=cuenta,
+                           total=len(clis), sin_vincular=sin_vincular, estados=ccalc.ESTADOS)
+
+
+@app.route("/clientes/nuevo", methods=["GET", "POST"])
+@app.route("/clientes/<int:id>/editar", methods=["GET", "POST"])
+@rol_requerido("admin", "vendedor")
+def cliente_form(id=None):
+    c = db.session.get(Cliente, id) if id else None
+    if id and not c:
+        abort(404)
+    if request.method == "POST":
+        f = request.form
+        nombre = f.get("nombre", "").strip()
+        dup = Cliente.query.filter(func.lower(Cliente.nombre) == nombre.lower(), Cliente.activo.is_(True),
+                                   Cliente.id != (id or 0)).first()
+        if not nombre:
+            flash("Escribe el nombre del cliente.", "error")
+        elif dup:
+            flash("Ya existe un cliente con ese nombre.", "error")
+        else:
+            if not c:
+                c = Cliente()
+                db.session.add(c)
+            c.nombre = nombre[:120]
+            c.telefono = f.get("telefono", "").strip()[:40] or None
+            c.direccion = f.get("direccion", "").strip()[:160] or None
+            c.tipo = f.get("tipo") if f.get("tipo") in TIPOS_CLIENTE else "Otro"
+            meta = int(n(f.get("meta_mensual")))
+            c.meta_mensual = meta if meta > 0 else None
+            c.nota = f.get("nota", "").strip()[:255] or None
+            db.session.commit()
+            flash(f"Cliente «{c.nombre}» guardado.", "ok")
+            return redirect(url_for("cliente_detalle", id=c.id))
+    return render_template("cliente_form.html", c=c, tipos=TIPOS_CLIENTE)
+
+
+@app.route("/clientes/<int:id>")
+@rol_requerido("admin", "vendedor")
+def cliente_detalle(id):
+    c = db.session.get(Cliente, id) or abort(404)
+    hoy_d = ahora().date()
+    m = ccalc.metricas([c], hoy_d)[c.id]
+    ventas_c = (Venta.query.filter(Venta.cliente_id == id).order_by(Venta.fecha.desc()).limit(25).all())
+    favoritos = (db.session.query(Producto.nombre, func.sum(VentaItem.cantidad))
+                 .select_from(VentaItem).join(Producto, VentaItem.producto_id == Producto.id)
+                 .join(Venta, VentaItem.venta_id == Venta.id)
+                 .filter(Venta.cliente_id == id, Venta.anulada.is_(False), VentaItem.bonificado.is_(False))
+                 .group_by(Producto.nombre).order_by(func.sum(VentaItem.cantidad).desc()).all())
+    meses = [dict(etq=f"{rpt.MESES[mm - 1].capitalize()} {str(yy)[2:]}", u=u)
+             for (yy, mm), u in ccalc.por_mes(id, hoy_d)]
+    bonifs = Bonificacion.query.filter_by(cliente_id=id).order_by(Bonificacion.fecha.desc()).all()
+    return render_template("cliente_detalle.html", c=c, m=m, ventas=ventas_c, favoritos=favoritos,
+                           meses=meses, max_mes=max([x["u"] for x in meses] + [1]), bonifs=bonifs)
+
+
+@app.route("/clientes/<int:id>/bonificar", methods=["POST"])
+@rol_requerido("admin")
+def cliente_bonificar(id):
+    c = db.session.get(Cliente, id) or abort(404)
+    cant = int(n(request.form.get("cantidad")))
+    if cant <= 0:
+        flash("Indica cuántos vikingos le vas a bonificar.", "error")
+    else:
+        db.session.add(Bonificacion(cliente_id=c.id, fecha=ahora().date(), cantidad=cant,
+                                    motivo=request.form.get("motivo", "").strip()[:255] or None,
+                                    usuario_id=current_user.id))
+        db.session.commit()
+        flash(f"{c.nombre} tiene {cant} vikingos de bonificación. Se le entregan en su próxima compra.", "ok")
+    return redirect(request.referrer or url_for("cliente_detalle", id=id))
+
+
+@app.route("/clientes/<int:id>/eliminar", methods=["POST"])
+@rol_requerido("admin")
+def cliente_eliminar(id):
+    c = db.session.get(Cliente, id) or abort(404)
+    c.activo = False
+    db.session.commit()
+    flash(f"Cliente «{c.nombre}» retirado de la cartera (sus ventas se conservan).", "ok")
+    return redirect(url_for("clientes"))
+
+
+@app.route("/clientes/importar", methods=["POST"])
+@rol_requerido("admin")
+def clientes_importar():
+    """Crea clientes a partir de los nombres escritos en ventas anteriores y las vincula."""
+    creados = vinculadas = 0
+    existentes = {c.nombre.strip().lower(): c for c in Cliente.query.filter_by(activo=True)}
+    for v in Venta.query.filter(Venta.cliente_id.is_(None), Venta.cliente.isnot(None)).all():
+        nom = (v.cliente or "").strip()
+        if not nom or nom.lower() in ("cliente general", "cliente mostrador"):
+            continue
+        c = existentes.get(nom.lower())
+        if not c:
+            c = Cliente(nombre=nom[:120], tipo="Otro")
+            db.session.add(c)
+            db.session.flush()
+            existentes[nom.lower()] = c
+            creados += 1
+        v.cliente_id = c.id
+        vinculadas += 1
+    db.session.commit()
+    flash(f"Listo: {creados} clientes creados y {vinculadas} ventas vinculadas.", "ok")
+    return redirect(url_for("clientes"))
+
+
 # ------------------------------------------------------------------- gastos
 @app.route("/gastos")
 @rol_requerido("admin")
@@ -965,16 +1092,30 @@ def venta_nueva():
     if request.method == "POST":
         f = request.form
         items = []
-        for pid, c, pr in zip(f.getlist("producto_id[]"), f.getlist("cantidad[]"),
-                              f.getlist("precio[]")):
+        regalos = f.getlist("regalo[]")
+        regalos += ["0"] * (len(f.getlist("producto_id[]")) - len(regalos))
+        for pid, c, pr, rg in zip(f.getlist("producto_id[]"), f.getlist("cantidad[]"),
+                                  f.getlist("precio[]"), regalos):
             if pid:
                 prod = db.session.get(Producto, int(pid))
                 if prod:
-                    items.append((prod, int(n(c)), n(pr)))
+                    items.append((prod, int(n(c)), n(pr), rg == "1"))
+        nombre = f.get("cliente", "").strip()
+        cli = None
+        if f.get("cliente_id"):
+            cli = db.session.get(Cliente, int(n(f.get("cliente_id"))))
+        if not cli and nombre:
+            cli = Cliente.query.filter(func.lower(Cliente.nombre) == nombre.lower(),
+                                       Cliente.activo.is_(True)).first()
+        if not cli and nombre and f.get("guardar_cliente"):
+            cli = Cliente(nombre=nombre[:120], telefono=f.get("cliente_tel", "").strip()[:40] or None,
+                          tipo=f.get("cliente_tipo") if f.get("cliente_tipo") in TIPOS_CLIENTE else "Tienda")
+            db.session.add(cli)
+            db.session.flush()
         try:
-            v = registrar_venta(items, f.get("cliente", ""), f.get("metodo_pago", "Efectivo"),
+            v = registrar_venta(items, cli.nombre if cli else nombre, f.get("metodo_pago", "Efectivo"),
                                 f.get("nota", "").strip(), fecha_form(f.get("fecha")),
-                                current_user.id)
+                                current_user.id, cliente_id=cli.id if cli else None)
             db.session.commit()
             flash(f"Venta #{v.id} registrada por {filtro_cop(v.total)}.", "ok")
             return redirect(url_for("venta_detalle", id=v.id))
@@ -984,7 +1125,15 @@ def venta_nueva():
                 flash(m, "error")
     productos_data = [dict(id=p.id, nombre=p.nombre, precio=p.precio_venta, stock=p.stock)
                       for p in Producto.query.filter_by(activo=True).order_by(Producto.nombre)]
-    return render_template("venta_form.html", productos=productos_data, metodos=METODOS_PAGO)
+    clis = Cliente.query.filter_by(activo=True).order_by(Cliente.nombre).all()
+    met = ccalc.metricas(clis, ahora().date())
+    clientes_data = [dict(id=c.id, nombre=c.nombre, tel=c.telefono or "", tipo=c.tipo or "",
+                          bonif=met[c.id]["bonif_pend"], estado=met[c.id]["estado_txt"],
+                          dias=met[c.id]["dias"], mes=met[c.id]["mes"], meta=c.meta_mensual or 0)
+                     for c in clis]
+    return render_template("venta_form.html", productos=productos_data, metodos=METODOS_PAGO,
+                           clientes=clientes_data, tipos_cliente=TIPOS_CLIENTE,
+                           pre_cliente=request.args.get("cliente", type=int))
 
 
 @app.route("/ventas/<int:id>")
@@ -1238,7 +1387,9 @@ def migrar_columnas():
               ("vk_insumos", "tanda_rinde", "FLOAT"),
               ("vk_productos", "tanda_rinde", "FLOAT"),
               ("vk_receta", "unidad", "VARCHAR(30)"),
-              ("vk_prep_receta", "unidad", "VARCHAR(30)")]
+              ("vk_prep_receta", "unidad", "VARCHAR(30)"),
+              ("vk_ventas", "cliente_id", "INTEGER"),
+              ("vk_venta_items", "bonificado", "BOOLEAN NOT NULL DEFAULT FALSE")]
     insp = inspect(db.engine)
     for tabla, col, tipo in nuevas:
         if col not in {c["name"] for c in insp.get_columns(tabla)}:

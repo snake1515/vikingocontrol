@@ -11,6 +11,11 @@
   .chip.sel { border-color: var(--accent); background: var(--accent-soft); }
   .chip.sel .qty { display: block; }
   .chip[disabled] { opacity: .45; cursor: not-allowed; }
+  .chip.regalo { border-color: var(--berry); }
+  .regalo-on .chip:not([disabled]) { border-style: dashed; border-color: var(--berry); }
+  .cli-info { margin-top: 10px; font-size: .88rem; }
+  .bonif-box { background: var(--berry-soft); color: #8f1d3c; border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  tr.reg td { background: #fff6f8; }
 </style>
 <div class="page-head"><div><h1>Nueva venta</h1><p>Toca un vikingo para sumarlo. Puedes ajustar cantidad y precio abajo.</p></div></div>
 {% if not productos %}<div class="note warn">No hay referencias de vikingos creadas.</div>{% else %}
@@ -19,6 +24,22 @@
   <div class="grid g-main">
     <div>
       <div class="card">
+        <div class="card-head"><h2>Cliente</h2><a href="{{ url_for('clientes') }}" class="btn sec sm">Ver cartera</a></div>
+        <input type="hidden" name="cliente_id" id="cliId">
+        <input class="input" name="cliente" id="cli" list="cliList" autocomplete="off" placeholder="Escribe para buscar, o déjalo vacío (cliente general)" value="{{ request.form.cliente }}">
+        <datalist id="cliList">{% for c in clientes %}<option value="{{ c.nombre }}">{{ c.tipo }}{{ ' · ' ~ c.tel if c.tel }}</option>{% endfor %}</datalist>
+        <div id="cliInfo" class="cli-info"></div>
+        <div id="cliNuevo" style="display:none;margin-top:10px">
+          <div class="form-row">
+            <div class="field"><label>Teléfono</label><input class="input" name="cliente_tel" placeholder="Opcional"></div>
+            <div class="field"><label>Tipo</label><select class="input" name="cliente_tipo">{% for t in tipos_cliente %}<option>{{ t }}</option>{% endfor %}</select></div>
+          </div>
+          <label class="check"><input type="checkbox" name="guardar_cliente" value="1" checked> <span>Guardar en mi cartera de clientes</span></label>
+        </div>
+        <div id="bonif" class="bonif-box" style="display:none"></div>
+      </div>
+      <div class="card" id="chipsCard">
+        <div class="card-head" id="modoTxt" style="display:none;margin-bottom:8px"><span class="badge berry">🎁 Modo regalo: lo que toques se agrega como bonificación ($0)</span><button type="button" class="btn sec sm" id="salirRegalo">Terminar regalo</button></div>
         <div class="chips" id="chips">
           {% for p in productos %}
           <button type="button" class="chip" data-id="{{ p.id }}" {{ 'disabled' if p.stock <= 0 }}>
@@ -40,7 +61,7 @@
       <h2>Total</h2>
       <div class="big-num" id="tot">$ 0</div>
       <p class="hint" id="und">0 vikingos</p>
-      <div class="field"><label>Cliente</label><input class="input" name="cliente" placeholder="Opcional" value="{{ request.form.cliente }}"></div>
+      <p class="hint" id="regTxt" style="display:none"></p>
       <div class="form-row">
         <div class="field"><label>Pago</label><select class="input" name="metodo_pago">{% for m in metodos %}<option {{ 'selected' if request.form.metodo_pago == m }}>{{ m }}</option>{% endfor %}</select></div>
         <div class="field"><label>Fecha</label><input class="input" type="date" name="fecha" value="{{ request.form.fecha or hoy }}"></div>
@@ -55,43 +76,73 @@
 {% endblock %}
 {% block scripts %}
 <script>
-const PRODS = {{ productos|tojson }};
-const rows = document.getElementById('rows');
+const PRODS = {{ productos|tojson }}, CLIS = {{ clientes|tojson }}, PRECLI = {{ pre_cliente|tojson }};
+const rows = document.getElementById('rows'), $ = id => document.getElementById(id);
 if (rows) {
   const prod = id => PRODS.find(p => p.id == id);
-  function rowFor(id) { return rows.querySelector(`tr[data-id="${id}"]`); }
-  function add(id, q = 1, precio = null) {
-    let tr = rowFor(id);
+  let modoRegalo = false, cliente = null;
+  const key = (id, r) => id + (r ? '-r' : '');
+  function rowFor(id, r) { return rows.querySelector(`tr[data-key="${key(id, r)}"]`); }
+  function add(id, q = 1, regalo = false) {
+    let tr = rowFor(id, regalo);
     if (tr) { const i = tr.querySelector('.q'); i.value = val(i) + q; return calc(); }
     const p = prod(id);
-    tr = document.createElement('tr'); tr.dataset.id = id;
-    tr.innerHTML = `<td><b>${p.nombre}</b><input type="hidden" name="producto_id[]" value="${id}"><br><small class="muted">${p.stock} disponibles</small></td>
+    tr = document.createElement('tr'); tr.dataset.id = id; tr.dataset.key = key(id, regalo); if (regalo) tr.className = 'reg';
+    tr.innerHTML = `<td><b>${p.nombre}</b>${regalo ? ' <span class="badge berry">🎁 Regalo</span>' : ''}<input type="hidden" name="producto_id[]" value="${id}"><input type="hidden" name="regalo[]" value="${regalo ? 1 : 0}"><br><small class="muted">${p.stock} disponibles</small></td>
       <td><input class="input r q" type="number" min="1" step="1" name="cantidad[]" value="${q}" style="width:80px"></td>
-      <td><input class="input r pr" type="number" min="0" step="any" name="precio[]" value="${precio ?? p.precio}" style="width:100px"></td>
+      <td><input class="input r pr" type="number" min="0" step="any" name="precio[]" value="${regalo ? 0 : p.precio}" style="width:100px" ${regalo ? 'readonly' : ''}></td>
       <td class="num st"></td><td><button type="button" class="btn-icon" title="Quitar">✕</button></td>`;
     tr.querySelector('.btn-icon').onclick = () => { tr.remove(); calc(); };
     tr.querySelectorAll('input').forEach(e => e.addEventListener('input', calc));
     rows.appendChild(tr); calc();
   }
   function calc() {
-    let t = 0, u = 0; const w = [];
+    let t = 0, u = 0, reg = 0; const w = [], porProd = {};
     document.querySelectorAll('.chip').forEach(c => { c.classList.remove('sel'); c.querySelector('.qty').textContent = 0; });
     rows.querySelectorAll('tr').forEach(tr => {
       const p = prod(tr.dataset.id), q = val(tr.querySelector('.q')), pr = val(tr.querySelector('.pr'));
       tr.querySelector('.st').textContent = COP(q * pr); t += q * pr; u += q;
-      if (q > p.stock) w.push(`${p.nombre}: solo hay ${p.stock}`);
-      const chip = document.querySelector(`.chip[data-id="${p.id}"]`);
-      chip.classList.add('sel'); chip.querySelector('.qty').textContent = q;
+      if (tr.classList.contains('reg')) reg += q;
+      porProd[p.id] = (porProd[p.id] || 0) + q;
     });
-    document.getElementById('tot').textContent = COP(t);
-    document.getElementById('und').textContent = NUM(u, 0) + (u === 1 ? ' vikingo' : ' vikingos');
-    document.getElementById('vacio').style.display = rows.children.length ? 'none' : '';
-    const wEl = document.getElementById('warn');
-    wEl.style.display = w.length ? '' : 'none'; wEl.innerHTML = w.join('<br>');
-    document.getElementById('go').disabled = !rows.children.length || w.length > 0;
+    for (const id in porProd) {
+      const p = prod(id); if (porProd[id] > p.stock) w.push(`${p.nombre}: solo hay ${p.stock}`);
+      const chip = document.querySelector(`.chip[data-id="${id}"]`); chip.classList.add('sel'); chip.querySelector('.qty').textContent = porProd[id];
+    }
+    $('tot').textContent = COP(t);
+    $('und').textContent = NUM(u, 0) + (u === 1 ? ' vikingo' : ' vikingos');
+    $('regTxt').style.display = reg ? '' : 'none'; $('regTxt').textContent = `Incluye ${reg} de regalo (bonificación).`;
+    if (cliente && cliente.bonif) {
+      const resta = cliente.bonif - reg;
+      $('bonifResta').textContent = resta >= 0 ? `Quedan ${resta} por entregar.` : `Estás regalando ${-resta} más de lo pendiente.`;
+    }
+    $('vacio').style.display = rows.children.length ? 'none' : '';
+    const wEl = $('warn'); wEl.style.display = w.length ? '' : 'none'; wEl.innerHTML = w.join('<br>');
+    $('go').disabled = !rows.children.length || w.length > 0;
   }
-  document.querySelectorAll('.chip').forEach(c => c.onclick = () => add(c.dataset.id));
-  calc();
+  function setModo(on) { modoRegalo = on; $('modoTxt').style.display = on ? '' : 'none'; $('chipsCard').classList.toggle('regalo-on', on); }
+  function elegirCliente() {
+    const nom = $('cli').value.trim().toLowerCase();
+    cliente = CLIS.find(c => c.nombre.toLowerCase() === nom) || null;
+    $('cliId').value = cliente ? cliente.id : '';
+    $('cliNuevo').style.display = (!cliente && nom) ? '' : 'none';
+    if (cliente) {
+      let info = `<span class="badge">${cliente.tipo || 'Cliente'}</span> ${cliente.estado}` + (cliente.dias != null ? ' · última compra ' + (cliente.dias === 0 ? 'hoy' : cliente.dias === 1 ? 'ayer' : `hace ${cliente.dias} días`) : '');
+      if (cliente.meta) info += ` · meta del mes: ${cliente.mes} / ${cliente.meta}`;
+      $('cliInfo').innerHTML = info;
+    } else $('cliInfo').innerHTML = nom ? '<small class="muted">Cliente nuevo</small>' : '';
+    if (cliente && cliente.bonif) {
+      $('bonif').style.display = '';
+      $('bonif').innerHTML = `🎁 <b>${cliente.nombre}</b> tiene <b>${cliente.bonif} vikingos de regalo</b> pendientes. <span id="bonifResta"></span><br><button type="button" class="btn sm" id="darRegalo" style="margin-top:8px;background:var(--berry)">Entregar regalo</button>`;
+      $('darRegalo').onclick = () => { setModo(true); $('chipsCard').scrollIntoView({ behavior: 'smooth' }); };
+    } else { $('bonif').style.display = 'none'; setModo(false); }
+    calc();
+  }
+  $('cli').addEventListener('input', elegirCliente);
+  $('salirRegalo').onclick = () => setModo(false);
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => add(c.dataset.id, 1, modoRegalo));
+  if (PRECLI) { const c = CLIS.find(x => x.id === PRECLI); if (c) $('cli').value = c.nombre; }
+  elegirCliente();
 }
 </script>
 {% endblock %}

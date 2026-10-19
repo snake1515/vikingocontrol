@@ -44,7 +44,7 @@ def _datos(venta, negocio):
         " · ".join(x for x in (negocio.direccion, negocio.ciudad) if x) or None,
         f"Tel. {negocio.telefono}" if negocio.telefono else None,
     ) if x]
-    items = [dict(nombre=i.producto.nombre, cant=i.cantidad, precio=i.precio_unitario,
+    items = [dict(nombre=i.producto.nombre + (" (obsequio)" if i.bonificado else ""), cant=i.cantidad, precio=i.precio_unitario,
                   subtotal=i.subtotal) for i in venta.items]
     return dict(
         negocio=negocio.nombre or "Mi negocio", lineas_neg=lineas_neg,

@@ -79,7 +79,15 @@
     <div class="sum-line" style="margin-top:8px;border-top:1px solid var(--line)"><span>Depreciación de equipos</span><b>{{ t.equipos|cop }}</b></div>
   </div>
 </div>
-<p class="hint" style="margin-top:12px">El Excel trae 5 hojas: consolidado (con totales en fórmulas y gráfico), por referencia, gastos, compras y ventas detalladas.</p>
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h2>Clientes que más compraron</h2><a class="btn sec sm" href="{{ url_for('clientes') }}">Ver clientes</a></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Cliente</th><th class="num">Compras</th><th class="num">Vikingos</th><th class="num">Ventas</th></tr></thead>
+    <tbody>{% for cl in rep.por_cliente[:10] %}<tr><td>{{ loop.index }}</td><td>{{ cl.nombre }}</td><td class="num">{{ cl.compras|num }}</td><td class="num">{{ cl.unidades|num }}</td><td class="num">{{ cl.ventas|cop }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">Sin ventas en el periodo.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+<p class="hint" style="margin-top:12px">El Excel trae 6 hojas: consolidado (con totales en fórmulas y gráfico), por referencia, por cliente, gastos, compras y ventas detalladas.</p>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/chart.umd.js', v=STATIC_V) }}"></script>
