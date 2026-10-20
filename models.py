@@ -270,6 +270,7 @@ class Venta(db.Model):
     fecha = db.Column(db.DateTime, nullable=False, default=ahora, index=True)
     cliente = db.Column(db.String(120))  # nombre tal como quedó en la venta
     cliente_id = db.Column(db.Integer, db.ForeignKey("vk_clientes.id"), index=True)
+    cliente_doc = db.Column(db.String(40))  # cédula o NIT tal como quedó en la venta
     metodo_pago = db.Column(db.String(30), default="Efectivo")
     nota = db.Column(db.String(255))
     total = db.Column(db.Float, nullable=False, default=0)
@@ -432,6 +433,7 @@ class Cliente(db.Model):
     telefono = db.Column(db.String(40))
     direccion = db.Column(db.String(160))
     tipo = db.Column(db.String(30), default="Tienda")
+    identificacion = db.Column(db.String(40))  # cédula o NIT
     meta_mensual = db.Column(db.Integer)  # vikingos al mes para ganar bonificación
     nota = db.Column(db.String(255))
     activo = db.Column(db.Boolean, nullable=False, default=True)
@@ -482,3 +484,53 @@ class DevolucionItem(db.Model):
     precio_unitario = db.Column(db.Float, nullable=False)
     bonificado = db.Column(db.Boolean, nullable=False, default=False)
     producto = db.relationship("Producto", lazy="joined")
+
+
+MOTIVOS_AJUSTE = ["Ajuste por conteo físico", "Pérdida", "Daño o mal estado", "Vencimiento", "Otro"]
+
+
+class Ajuste(db.Model):
+    """Documento de egreso: saca insumos o vikingos de la bodega (pérdida, conteo, daño...)."""
+    __tablename__ = "vk_ajustes"
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, nullable=False, default=ahora, index=True)
+    motivo = db.Column(db.String(40), nullable=False, default="Pérdida")
+    descripcion = db.Column(db.String(255))
+    total = db.Column(db.Float, nullable=False, default=0)
+    anulada = db.Column(db.Boolean, nullable=False, default=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("vk_usuarios.id"))
+    usuario = db.relationship("Usuario", lazy="joined")
+    items = db.relationship("AjusteItem", back_populates="ajuste", lazy="selectin",
+                            cascade="all, delete-orphan", order_by="AjusteItem.id")
+
+    @property
+    def numero(self):
+        return f"EG-{self.id:06d}"
+
+
+class AjusteItem(db.Model):
+    __tablename__ = "vk_ajuste_items"
+    id = db.Column(db.Integer, primary_key=True)
+    ajuste_id = db.Column(db.Integer, db.ForeignKey("vk_ajustes.id"), nullable=False, index=True)
+    insumo_id = db.Column(db.Integer, db.ForeignKey("vk_insumos.id"))
+    producto_id = db.Column(db.Integer, db.ForeignKey("vk_productos.id"))
+    cantidad = db.Column(db.Float, nullable=False)  # en la unidad del insumo, o vikingos
+    stock_antes = db.Column(db.Float)  # existencia en el sistema al momento del egreso
+    costo_unitario = db.Column(db.Float, nullable=False, default=0)
+    costo_total = db.Column(db.Float, nullable=False, default=0)
+
+    ajuste = db.relationship("Ajuste", back_populates="items")
+    insumo = db.relationship("Insumo", lazy="joined")
+    producto = db.relationship("Producto", lazy="joined")
+
+    @property
+    def item(self):
+        return self.insumo or self.producto
+
+    @property
+    def nombre(self):
+        return self.insumo.nombre if self.insumo else (self.producto.nombre if self.producto else "—")
+
+    @property
+    def unidad(self):
+        return self.insumo.unidad if self.insumo else "vikingo"

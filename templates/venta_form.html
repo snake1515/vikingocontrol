@@ -29,6 +29,8 @@
         <input class="input" name="cliente" id="cli" list="cliList" autocomplete="off" placeholder="Escribe para buscar, o déjalo vacío (cliente general)" value="{{ request.form.cliente }}">
         <datalist id="cliList">{% for c in clientes %}<option value="{{ c.nombre }}">{{ c.tipo }}{{ ' · ' ~ c.tel if c.tel }}</option>{% endfor %}</datalist>
         <div id="cliInfo" class="cli-info"></div>
+        <div class="field" style="margin-top:10px;margin-bottom:0"><label>Cédula o NIT <small class="muted">(opcional, sale en el comprobante)</small></label>
+          <input class="input" name="cliente_doc" id="cliDoc" value="{{ request.form.cliente_doc }}" placeholder="Ej: 1.090.123.456 o 900.123.456-7" autocomplete="off"></div>
         <div id="cliNuevo" style="display:none;margin-top:10px">
           <div class="form-row">
             <div class="field"><label>Teléfono</label><input class="input" name="cliente_tel" placeholder="Opcional"></div>
@@ -126,6 +128,9 @@ if (rows) {
     cliente = CLIS.find(c => c.nombre.toLowerCase() === nom) || null;
     $('cliId').value = cliente ? cliente.id : '';
     $('cliNuevo').style.display = (!cliente && nom) ? '' : 'none';
+    if (cliente && cliente.doc) $('cliDoc').value = cliente.doc;
+    else if (cliente && $('cliDoc').dataset.auto) $('cliDoc').value = '';
+    $('cliDoc').dataset.auto = (cliente && cliente.doc) ? '1' : '';
     if (cliente) {
       let info = `<span class="badge">${cliente.tipo || 'Cliente'}</span> ${cliente.estado}` + (cliente.dias != null ? ' · última compra ' + (cliente.dias === 0 ? 'hoy' : cliente.dias === 1 ? 'ayer' : `hace ${cliente.dias} días`) : '');
       if (cliente.meta) info += ` · meta del mes: ${cliente.mes} / ${cliente.meta}`;

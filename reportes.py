@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func
 
 from activos_calc import activos_vigentes, depreciacion_dia
-from models import (Activo, CompraInsumo, Gasto, Produccion, Producto, Venta, VentaItem, db)
+from models import (Ajuste, Activo, CompraInsumo, Gasto, Produccion, Producto, Venta, VentaItem, db)
 
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 AGRUPACIONES = {"diario": "Por día", "semanal": "Por semana", "mensual": "Por mes"}
@@ -97,6 +97,10 @@ def generar(desde, hasta, agrupar):
     for g in Gasto.query.filter(Gasto.fecha >= desde, Gasto.fecha <= hasta):
         filas[b(g.fecha)]["gastos"] += g.valor
         gastos_cat[g.categoria] += g.valor
+    # Egresos por ajuste (pérdidas de inventario): cuentan como gasto
+    for a in Ajuste.query.filter(Ajuste.anulada.is_(False), Ajuste.fecha >= ini, Ajuste.fecha < fin):
+        filas[b(a.fecha.date())]["gastos"] += a.total
+        gastos_cat["Pérdidas de inventario"] += a.total
     # Depreciación (día a día)
     activos = activos_vigentes()
     d = desde
@@ -270,6 +274,17 @@ def excel(rep, desde, hasta, agrupar, negocio):
         w3.cell(row=i, column=2, value=g.categoria)
         w3.cell(row=i, column=3, value=g.descripcion or "")
         w3.cell(row=i, column=4, value=round(g.valor, 2)).number_format = FMT_COP
+    fila_aj = w3.max_row + 1
+    ini_aj = datetime.combine(desde, datetime.min.time())
+    fin_aj = datetime.combine(hasta + timedelta(days=1), datetime.min.time())
+    for a in (Ajuste.query.filter(Ajuste.anulada.is_(False), Ajuste.fecha >= ini_aj, Ajuste.fecha < fin_aj)
+              .order_by(Ajuste.fecha).all()):
+        w3.cell(row=fila_aj, column=1, value=a.fecha.date()).number_format = "DD/MM/YYYY"
+        w3.cell(row=fila_aj, column=2, value="Pérdidas de inventario")
+        det = ", ".join(f"{it.cantidad:g} {it.unidad} {it.nombre}" for it in a.items)
+        w3.cell(row=fila_aj, column=3, value=f"EG-{a.id:06d} · {a.motivo}: {det}"[:250])
+        w3.cell(row=fila_aj, column=4, value=round(a.total, 2)).number_format = FMT_COP
+        fila_aj += 1
     _anchos(w3, [24, 22, 40, 16])
 
     # Compras detalladas

@@ -49,7 +49,7 @@ def _datos(venta, negocio):
     return dict(
         negocio=negocio.nombre or "Mi negocio", lineas_neg=lineas_neg,
         numero=numero(venta), fecha=venta.fecha.strftime("%d/%m/%Y %I:%M %p"),
-        cliente=venta.cliente or "Cliente general", pago=venta.metodo_pago or "",
+        cliente=venta.cliente or "Cliente general", doc=venta.cliente_doc or "", pago=venta.metodo_pago or "",
         vendedor=venta.usuario.nombre if venta.usuario else "", items=items,
         unidades=venta.unidades, total=venta.total, anulada=venta.anulada,
         mensaje=negocio.mensaje or "", nota=venta.nota or "",
@@ -57,15 +57,9 @@ def _datos(venta, negocio):
 
 
 # --------------------------------------------------------------------- PDF
-def pdf(venta, negocio):
-    d = _datos(venta, negocio)
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=letter)
-    c.setTitle(f"Comprobante {d['numero']}")
+def _encabezado_pdf(c, d, titulo, x0, x1, y):
+    """Logo, datos del negocio, título, número y fecha. Devuelve la y más baja usada."""
     W, H = letter
-    x0, x1 = 20 * mm, W - 20 * mm
-    y = H - 22 * mm
-
     # Encabezado
     c.setFillColor(HexColor(ACENTO))
     c.rect(0, H - 8 * mm, W, 8 * mm, stroke=0, fill=1)
@@ -87,18 +81,32 @@ def pdf(venta, negocio):
         yy = min(yy, y - 26 * mm)
     c.setFillColor(HexColor(TINTA))
     c.setFont("DVB", 12)
-    c.drawRightString(x1, y, "COMPROBANTE DE VENTA")
+    c.drawRightString(x1, y, titulo)
     c.setFont("DVB", 16)
     c.setFillColor(HexColor(ACENTO))
     c.drawRightString(x1, y - 8 * mm, d["numero"])
     c.setFont("DV", 9.5)
     c.setFillColor(HexColor(GRIS))
     c.drawRightString(x1, y - 14 * mm, d["fecha"])
+    return yy
+
+
+def pdf(venta, negocio):
+    d = _datos(venta, negocio)
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setTitle(f"Comprobante {d['numero']}")
+    W, H = letter
+    x0, x1 = 20 * mm, W - 20 * mm
+    y = H - 22 * mm
+
+    yy = _encabezado_pdf(c, d, "COMPROBANTE DE VENTA", x0, x1, y)
 
     y = min(yy, y - 20 * mm) - 6 * mm
     # Datos de la venta
     c.setStrokeColor(HexColor(LINEA))
-    c.roundRect(x0, y - 16 * mm, x1 - x0, 16 * mm, 3 * mm, stroke=1, fill=0)
+    alto = 20 * mm if d["doc"] else 16 * mm
+    c.roundRect(x0, y - alto, x1 - x0, alto, 3 * mm, stroke=1, fill=0)
     cols = [("Cliente", d["cliente"]), ("Medio de pago", d["pago"]), ("Atendió", d["vendedor"])]
     cw = (x1 - x0) / 3
     for i, (k, v) in enumerate(cols):
@@ -109,7 +117,11 @@ def pdf(venta, negocio):
         c.setFont("DVB", 10.5)
         c.setFillColor(HexColor(TINTA))
         c.drawString(cx, y - 11.5 * mm, v[:34])
-    y -= 26 * mm
+    if d["doc"]:
+        c.setFont("DV", 9)
+        c.setFillColor(HexColor(GRIS))
+        c.drawString(x0 + 5 * mm, y - 16.5 * mm, f"C.C./NIT {d['doc']}"[:40])
+    y -= alto + 10 * mm
 
     # Tabla
     cx_cant, cx_precio, cx_sub = x1 - 90 * mm, x1 - 40 * mm, x1
@@ -211,7 +223,7 @@ def jpg(venta, negocio):
     # Alto según el contenido
     alto_items = sum(46 * len(cortar(it["nombre"], F["item"], W - 2 * M - 300)) + 74 for it in d["items"])
     LOGO_W = 380
-    H = 640 + (LOGO_W * 769 // 800 + 30 if HAY_LOGO else 0) + 44 * len(d["lineas_neg"]) + alto_items + 280 + (60 if d["nota"] else 0)
+    H = 640 + (LOGO_W * 769 // 800 + 30 if HAY_LOGO else 0) + 44 * len(d["lineas_neg"]) + alto_items + 280 + (60 if d["nota"] else 0) + (50 if d["doc"] else 0)
     img = Image.new("RGB", (W, H), "white")
     g = ImageDraw.Draw(img)
 
@@ -238,7 +250,9 @@ def jpg(venta, negocio):
     g.text((W / 2, y), d["fecha"], font=F["small"], fill=GRIS, anchor="mt")
     y += 64
 
-    for k, v in (("Cliente", d["cliente"]), ("Pago", d["pago"]), ("Atendió", d["vendedor"])):
+    filas_d = [("Cliente", d["cliente"])] + ([("C.C./NIT", d["doc"])] if d["doc"] else []) + \
+        [("Pago", d["pago"]), ("Atendió", d["vendedor"])]
+    for k, v in filas_d:
         g.text((M, y), k, font=F["sub"], fill=GRIS)
         g.text((W - M, y), v[:30], font=F["val"], fill=TINTA, anchor="ra")
         y += 50
@@ -280,4 +294,122 @@ def jpg(venta, negocio):
 
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=90)
+    return buf.getvalue()
+
+
+# ------------------------------------------------------- Documento de egreso
+def numero_egreso(a):
+    return f"EG-{a.id:06d}"
+
+
+def egreso_pdf(a, negocio):
+    """Documento de egreso por ajuste de inventario (pérdida, conteo físico, daño...)."""
+    lineas_neg = [x for x in (
+        f"NIT {negocio.nit}" if negocio.nit else None,
+        " · ".join(x for x in (negocio.direccion, negocio.ciudad) if x) or None,
+        f"Tel. {negocio.telefono}" if negocio.telefono else None,
+    ) if x]
+    d = dict(negocio=negocio.nombre or "Mi negocio", lineas_neg=lineas_neg, numero=numero_egreso(a),
+             fecha=a.fecha.strftime("%d/%m/%Y"))
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setTitle(f"Egreso {d['numero']}")
+    W, H = letter
+    x0, x1 = 20 * mm, W - 20 * mm
+    y = H - 22 * mm
+    yy = _encabezado_pdf(c, d, "EGRESO DE INVENTARIO", x0, x1, y)
+    y = min(yy, y - 20 * mm) - 6 * mm
+
+    alto = 22 * mm if a.descripcion else 16 * mm
+    c.setStrokeColor(HexColor(LINEA))
+    c.roundRect(x0, y - alto, x1 - x0, alto, 3 * mm, stroke=1, fill=0)
+    cols = [("Motivo", a.motivo), ("Registró", a.usuario.nombre if a.usuario else ""),
+            ("Estado", "ANULADO" if a.anulada else "Vigente")]
+    cw = (x1 - x0) / 3
+    for i, (k, v) in enumerate(cols):
+        cx = x0 + 5 * mm + i * cw
+        c.setFont("DV", 8)
+        c.setFillColor(HexColor(GRIS))
+        c.drawString(cx, y - 6 * mm, k.upper())
+        c.setFont("DVB", 10.5)
+        c.setFillColor(HexColor(ROJO if v == "ANULADO" else TINTA))
+        c.drawString(cx, y - 11.5 * mm, (v or "")[:34])
+    if a.descripcion:
+        c.setFont("DV", 9.5)
+        c.setFillColor(HexColor(GRIS))
+        c.drawString(x0 + 5 * mm, y - 18 * mm, f"Descripción: {a.descripcion}"[:110])
+    y -= alto + 10 * mm
+
+    cx_ant, cx_cant, cx_cu, cx_tot = x1 - 98 * mm, x1 - 68 * mm, x1 - 34 * mm, x1
+    c.setFont("DVB", 8.5)
+    c.setFillColor(HexColor(GRIS))
+    c.drawString(x0, y, "INSUMO / VIKINGO")
+    c.drawRightString(cx_ant, y, "EN SISTEMA")
+    c.drawRightString(cx_cant, y, "SALE")
+    c.drawRightString(cx_cu, y, "COSTO UNIT.")
+    c.drawRightString(cx_tot, y, "COSTO TOTAL")
+    y -= 3 * mm
+    c.setStrokeColor(HexColor(TINTA))
+    c.line(x0, y, x1, y)
+    y -= 7 * mm
+    c.setStrokeColor(HexColor(LINEA))
+
+    def q(v):
+        return f"{v:,.3f}".rstrip("0").rstrip(".").replace(",", "X").replace(".", ",").replace("X", ".")
+
+    for it in a.items:
+        if y < 60 * mm:
+            c.showPage()
+            y = H - 25 * mm
+        u = it.unidad if it.insumo else "und"
+        c.setFont("DV", 10.5)
+        c.setFillColor(HexColor(TINTA))
+        c.drawString(x0, y, it.nombre[:30])
+        c.setFillColor(HexColor(GRIS))
+        c.drawRightString(cx_ant, y, f"{q(it.stock_antes or 0)} {u}" if it.stock_antes is not None else "—")
+        c.setFillColor(HexColor(TINTA))
+        c.drawRightString(cx_cant, y, f"{q(it.cantidad)} {u}")
+        c.drawRightString(cx_cu, y, cop(it.costo_unitario))
+        c.setFont("DVB", 10.5)
+        c.drawRightString(cx_tot, y, cop(it.costo_total))
+        y -= 4 * mm
+        c.line(x0, y, x1, y)
+        y -= 6 * mm
+
+    y -= 2 * mm
+    c.setFillColor(HexColor("#fdf0f0"))
+    c.roundRect(x1 - 85 * mm, y - 14 * mm, 85 * mm, 16 * mm, 3 * mm, stroke=0, fill=1)
+    c.setFillColor(HexColor(GRIS))
+    c.setFont("DV", 9.5)
+    c.drawString(x1 - 80 * mm, y - 4 * mm, f"{len(a.items)} línea{'s' if len(a.items) != 1 else ''}")
+    c.setFillColor(HexColor(TINTA))
+    c.setFont("DVB", 11)
+    c.drawString(x1 - 80 * mm, y - 10 * mm, "VALOR DEL EGRESO")
+    c.setFont("DVB", 15)
+    c.drawRightString(x1 - 5 * mm, y - 10 * mm, cop(a.total))
+    y -= 40 * mm
+
+    # Firmas
+    for i, rot in enumerate(("Elaboró", "Revisó / aprobó")):
+        fx = x0 + i * ((x1 - x0) / 2 + 5 * mm)
+        c.setStrokeColor(HexColor(TINTA))
+        c.line(fx, y, fx + 70 * mm, y)
+        c.setFont("DV", 9)
+        c.setFillColor(HexColor(GRIS))
+        c.drawString(fx, y - 5 * mm, rot)
+
+    c.setFont("DV", 8)
+    c.setFillColor(HexColor(GRIS))
+    c.drawCentredString(W / 2, 14 * mm, "Documento interno de egreso de inventario. Valorizado al costo promedio.")
+    if a.anulada:
+        c.saveState()
+        c.translate(W / 2, H / 2)
+        c.rotate(30)
+        c.setFillColor(HexColor(ROJO))
+        c.setFillAlpha(0.18)
+        c.setFont("DVB", 90)
+        c.drawCentredString(0, 0, "ANULADO")
+        c.restoreState()
+    c.showPage()
+    c.save()
     return buf.getvalue()

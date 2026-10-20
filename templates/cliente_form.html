@@ -14,8 +14,11 @@
       <div class="field"><label>Teléfono / WhatsApp</label><input class="input" name="telefono" value="{{ request.form.telefono or (c.telefono or '' if c else '') }}" placeholder="Ej: 300 123 4567"></div>
       <div class="field"><label>Dirección o barrio</label><input class="input" name="direccion" value="{{ request.form.direccion or (c.direccion or '' if c else '') }}" placeholder="Opcional"></div>
     </div>
-    <div class="field" style="max-width:300px"><label>Meta mensual (vikingos)</label><input class="input" type="number" min="0" step="1" name="meta_mensual" value="{{ request.form.meta_mensual or (c.meta_mensual or '' if c else '') }}" placeholder="Ej: 300">
-      <div class="hint">Si la cumple en el mes, aparece como «Cumplida» para bonificarlo. Déjala vacía si no aplica.</div></div>
+    <div class="form-row">
+      <div class="field"><label>Cédula o NIT</label><input class="input" name="identificacion" value="{{ request.form.identificacion or (c.identificacion or '' if c else '') }}" placeholder="Opcional · sale en el comprobante"></div>
+      <div class="field"><label>Meta mensual (vikingos)</label><input class="input" type="number" min="0" step="1" name="meta_mensual" value="{{ request.form.meta_mensual or (c.meta_mensual or '' if c else '') }}" placeholder="Ej: 300"></div>
+    </div>
+    <div class="hint" style="margin:-6px 0 12px">Meta: si la cumple en el mes, aparece como «Cumplida» para bonificarlo. Déjala vacía si no aplica.</div>
     <div class="field"><label>Nota</label><input class="input" name="nota" value="{{ request.form.nota or (c.nota or '' if c else '') }}" placeholder="Ej: paga los viernes, prefiere fresa"></div>
     <div class="actions"><button class="btn">Guardar</button><a class="btn sec" href="{{ url_for('cliente_detalle', id=c.id) if c else url_for('clientes') }}">Cancelar</a></div>
   </form>

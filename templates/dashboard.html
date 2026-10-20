@@ -54,7 +54,8 @@
         <div class="bar" style="margin:-2px 0 4px"><span style="width:{{ ((v / costo_prod * 100) if costo_prod else 0)|round(1) }}%"></span></div>
       {% endfor %}
       <div class="sum-line" style="margin-top:8px;border-top:1px solid var(--line)"><span>Depreciación de equipos<br><small><a href="{{ url_for('activos') }}">Ver equipos</a></small></span><b>{{ depreciacion|cop }}</b></div>
-      <div class="sum-line"><span>Gastos del negocio<br><small>{% for c, v in gastos_det[:3] %}{{ c }}{{ ', ' if not loop.last }}{% else %}Publicidad, arriendo…{% endfor %} · <a href="{{ url_for('gastos') }}">Ver gastos</a></small></span><b>{{ gastos_tot|cop }}</b></div>
+      <div class="sum-line"><span>Gastos del negocio<br><small>{% for c, v in gastos_det[:3] %}{{ c }}{{ ', ' if not loop.last }}{% else %}Publicidad, arriendo…{% endfor %} · <a href="{{ url_for('gastos') }}">Ver gastos</a></small></span><b>{{ gastos_neg|cop }}</b></div>
+      {% if perdidas > 0.5 %}<div class="sum-line"><span>Pérdidas de inventario<br><small>Egresos por ajuste · <a href="{{ url_for('ajustes', desde=desde, hasta=hasta) }}">Ver egresos</a></small></span><b>{{ perdidas|cop }}</b></div>{% endif %}
       <p class="hint" style="margin-top:10px">Compras en el periodo: insumos <b>{{ compras|cop }}</b>{% if compras_equipos %} · equipos <b>{{ compras_equipos|cop }}</b>{% endif %}</p>
     </div>
 

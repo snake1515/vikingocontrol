@@ -48,6 +48,7 @@
       <a href="{{ url_for('productos') }}" class="{{ 'on' if ep.startswith('producto') }}"><span class="ico">❄</span>Vikingos</a>
       <a href="{{ url_for('insumos') }}" class="{{ 'on' if ep.startswith('insumo') }}"><span class="ico">▤</span>Insumos</a>
       <a href="{{ url_for('compras') }}" class="{{ 'on' if ep.startswith('compra') }}"><span class="ico">⇣</span>Compras</a>
+      <a href="{{ url_for('ajustes') }}" class="{{ 'on' if ep.startswith('ajuste') }}"><span class="ico">⇡</span>Egresos y ajustes</a>
       {% endif %}
       {% if puede('admin') %}
       <a href="{{ url_for('gastos') }}" class="{{ 'on' if ep.startswith('gasto') }}"><span class="ico">✎</span>Gastos</a>

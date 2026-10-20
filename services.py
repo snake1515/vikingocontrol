@@ -4,7 +4,7 @@ Cada función valida, mueve inventario y calcula costos. Si algo no cuadra
 lanza ErrorNegocio con la lista de mensajes para mostrar al usuario.
 El commit lo hace quien llama.
 """
-from models import (CompraInsumo, Devolucion, DevolucionItem, Preparacion, PreparacionConsumo, Produccion,
+from models import (MOTIVOS_AJUSTE, Ajuste, AjusteItem, CompraInsumo, Insumo, Producto, Devolucion, DevolucionItem, Preparacion, PreparacionConsumo, Produccion,
                     ProduccionConsumo, Venta,
                     VentaItem, ahora, db)
 
@@ -308,3 +308,62 @@ def devolver_parcial(venta, cantidades, motivo="", usuario_id=None):
     venta.ganancia = venta.total - venta.costo_total
     db.session.add(dev)
     return dev
+
+
+def registrar_ajuste(lineas, motivo, descripcion="", fecha=None, usuario_id=None):
+    """Documento de egreso. lineas: lista de (Insumo|Producto, cantidad que sale)."""
+    errores = []
+    if motivo not in MOTIVOS_AJUSTE:
+        errores.append("Elige el motivo del egreso.")
+    descripcion = (descripcion or "").strip()[:255]
+    if motivo == "Otro" and not descripcion:
+        errores.append("Si el motivo es «Otro», escribe una descripción.")
+    agrupado = {}
+    for obj, cant in lineas:
+        if obj is None or not cant:
+            continue
+        if cant < 0:
+            errores.append(f"La cantidad de «{obj.nombre}» no puede ser negativa.")
+            continue
+        if isinstance(obj, Producto) and abs(cant - round(cant)) > TOL:
+            errores.append(f"De «{obj.nombre}» la cantidad debe ser un número entero de vikingos.")
+            continue
+        agrupado[obj] = agrupado.get(obj, 0) + cant
+    if not agrupado and not errores:
+        errores.append("Agrega al menos un insumo o vikingo con la cantidad que sale.")
+    for obj, cant in agrupado.items():
+        if cant > (obj.stock or 0) + TOL:
+            u = obj.unidad if isinstance(obj, Insumo) else "vikingos"
+            errores.append(f"De «{obj.nombre}» hay {(obj.stock or 0):g} {u} en bodega; no pueden salir {cant:g}.")
+    if errores:
+        raise ErrorNegocio(errores)
+
+    a = Ajuste(fecha=fecha or ahora(), motivo=motivo, descripcion=descripcion or None,
+               usuario_id=usuario_id, total=0.0)
+    for obj, cant in agrupado.items():
+        cu = obj.costo_promedio or 0
+        it = AjusteItem(cantidad=cant, stock_antes=obj.stock or 0, costo_unitario=cu, costo_total=cant * cu)
+        if isinstance(obj, Insumo):
+            it.insumo = obj
+            obj.stock = max((obj.stock or 0) - cant, 0)
+        else:
+            it.producto = obj
+            cant = int(round(cant))
+            it.cantidad = cant
+            obj.stock = (obj.stock or 0) - cant
+        a.items.append(it)
+        a.total += it.costo_total
+    db.session.add(a)
+    return a
+
+
+def anular_ajuste(a):
+    if a.anulada:
+        raise ErrorNegocio("Este egreso ya estaba anulado.")
+    for it in a.items:
+        obj = it.item
+        if obj is None:
+            continue
+        obj.costo_promedio = promedio_ponderado(obj.stock, obj.costo_promedio, it.cantidad, it.costo_unitario)
+        obj.stock = (obj.stock or 0) + (int(it.cantidad) if it.producto else it.cantidad)
+    a.anulada = True

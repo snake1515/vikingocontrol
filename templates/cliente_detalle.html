@@ -10,7 +10,7 @@
 </style>
 <div class="page-head">
   <div><h1>{{ c.nombre }} <span class="badge {{ m.estado_cls }}">{{ m.estado_txt }}</span></h1>
-    <p>{{ c.tipo or '' }}{% if c.telefono %} · {{ c.telefono }}{% endif %}{% if c.direccion %} · {{ c.direccion }}{% endif %}{% if c.nota %} · <i>{{ c.nota }}</i>{% endif %}</p></div>
+    <p>{{ c.tipo or '' }}{% if c.identificacion %} · C.C./NIT {{ c.identificacion }}{% endif %}{% if c.telefono %} · {{ c.telefono }}{% endif %}{% if c.direccion %} · {{ c.direccion }}{% endif %}{% if c.nota %} · <i>{{ c.nota }}</i>{% endif %}</p></div>
   <div class="actions">
     {% if c.whatsapp %}<a class="btn sec" href="{{ c.whatsapp }}" target="_blank">WhatsApp</a>{% endif %}
     <a class="btn sec" href="{{ url_for('cliente_form', id=c.id) }}">Editar</a>

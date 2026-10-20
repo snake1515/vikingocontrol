@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Vikingos (referencias)</h1><p>Cada sabor con su receta, costo, precio y existencias</p></div>
-  {% if puede('admin') %}<a class="btn" href="{{ url_for('producto_form') }}">＋ Nueva referencia</a>{% endif %}
+  <div class="actions"><a class="btn sec" href="{{ url_for('ajuste_nuevo') }}">⇡ Egreso / ajuste</a>{% if puede('admin') %}<a class="btn" href="{{ url_for('producto_form') }}">＋ Nueva referencia</a>{% endif %}</div>
 </div>
 <div class="card">
   <div class="table-wrap"><table>

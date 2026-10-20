@@ -12,7 +12,7 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from sqlalchemy import func
 
-from models import (CATEGORIAS_GASTO, Devolucion, TIPOS_CLIENTE, Bonificacion, Cliente, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
+from models import (MOTIVOS_AJUSTE, Ajuste, CATEGORIAS_GASTO, Devolucion, TIPOS_CLIENTE, Bonificacion, Cliente, Preparacion, PrepRecetaItem, METODOS_PAGO, ROLES, TIPOS_MO, UNIDADES, Activo,
                     CompraInsumo, Gasto,
                     Configuracion, DatosNegocio,
                     Insumo, Produccion, Producto, RecetaItem, Usuario, Venta,
@@ -22,7 +22,7 @@ import reportes as rpt
 import clientes_calc as ccalc
 from unidades import ABREV, compatibles, convertir, unidad_valida
 from activos_calc import activos_vigentes, depreciacion_dia, depreciacion_periodo
-from services import (ErrorNegocio, devolver_parcial, anular_compra, anular_preparacion, anular_produccion,
+from services import (anular_ajuste, registrar_ajuste, ErrorNegocio, devolver_parcial, anular_compra, anular_preparacion, anular_produccion,
                       anular_venta, registrar_preparacion, registrar_compra,
                       registrar_produccion, registrar_venta)
 
@@ -114,6 +114,20 @@ def gastos_por_dia(desde, hasta):
     filas = (db.session.query(Gasto.fecha, func.sum(Gasto.valor))
              .filter(Gasto.fecha >= desde, Gasto.fecha <= hasta).group_by(Gasto.fecha).all())
     return {f: v or 0 for f, v in filas}
+
+
+CAT_PERDIDAS = "Pérdidas de inventario"
+
+
+def perdidas_por_dia(desde, hasta):
+    """dict date -> valor de los egresos por ajuste (pérdidas), entre fechas date (inclusive)."""
+    ini = datetime.combine(desde, datetime.min.time())
+    fin = datetime.combine(hasta + timedelta(days=1), datetime.min.time())
+    out = defaultdict(float)
+    for f, v in (db.session.query(Ajuste.fecha, Ajuste.total)
+                 .filter(Ajuste.anulada.is_(False), Ajuste.fecha >= ini, Ajuste.fecha < fin)):
+        out[f.date()] += v or 0
+    return out
 
 
 def rol_requerido(*roles):
@@ -349,7 +363,9 @@ def inicio():
     gastos_det = (db.session.query(Gasto.categoria, func.sum(Gasto.valor))
                   .filter(Gasto.fecha >= ini.date(), Gasto.fecha < fin.date())
                   .group_by(Gasto.categoria).order_by(func.sum(Gasto.valor).desc()).all())
-    gastos_tot = sum(v or 0 for _, v in gastos_det)
+    perdidas = sum(perdidas_por_dia(ini.date(), (fin - timedelta(days=1)).date()).values())
+    gastos_neg = sum(v or 0 for _, v in gastos_det)
+    gastos_tot = gastos_neg + perdidas
     ganancia_neta = ganancia - depreciacion - gastos_tot
 
     insumos = Insumo.query.filter_by(activo=True).all()
@@ -358,7 +374,7 @@ def inicio():
         "dashboard.html", desde=desde, hasta=hasta, ingresos=ingresos,
         costo_vendido=costo_vendido, ganancia=ganancia,
         depreciacion=depreciacion, ganancia_neta=ganancia_neta,
-        gastos_det=gastos_det, gastos_tot=gastos_tot,
+        gastos_det=gastos_det, gastos_tot=gastos_tot, gastos_neg=gastos_neg, perdidas=perdidas,
         margen=(ganancia / ingresos * 100) if ingresos else 0,
         unidades_vendidas=unidades_vendidas, num_ventas=len(ventas),
         unidades_prod=unidades_prod, costo_prod=costo_prod, desglose=desglose,
@@ -391,6 +407,8 @@ def distribucion():
     activos = activos_vigentes()
 
     gastos_dia = gastos_por_dia(ini.date(), (fin - timedelta(days=1)).date())
+    for k, v in perdidas_por_dia(ini.date(), (fin - timedelta(days=1)).date()).items():
+        gastos_dia[k] = gastos_dia.get(k, 0) + v
 
     def repartir(ventas_, costo_, equipos_, gastos_=0.0):
         ganancia = ventas_ - costo_
@@ -636,6 +654,7 @@ def cliente_form(id=None):
             c.nombre = nombre[:120]
             c.telefono = f.get("telefono", "").strip()[:40] or None
             c.direccion = f.get("direccion", "").strip()[:160] or None
+            c.identificacion = f.get("identificacion", "").strip()[:40] or None
             c.tipo = f.get("tipo") if f.get("tipo") in TIPOS_CLIENTE else "Otro"
             meta = int(n(f.get("meta_mensual")))
             c.meta_mensual = meta if meta > 0 else None
@@ -1112,10 +1131,14 @@ def venta_nueva():
                           tipo=f.get("cliente_tipo") if f.get("cliente_tipo") in TIPOS_CLIENTE else "Tienda")
             db.session.add(cli)
             db.session.flush()
+        doc = f.get("cliente_doc", "").strip()[:40] or None
+        if cli and doc and not cli.identificacion:
+            cli.identificacion = doc  # se guarda en la cartera para la próxima vez
         try:
             v = registrar_venta(items, cli.nombre if cli else nombre, f.get("metodo_pago", "Efectivo"),
                                 f.get("nota", "").strip(), fecha_form(f.get("fecha")),
                                 current_user.id, cliente_id=cli.id if cli else None)
+            v.cliente_doc = doc
             db.session.commit()
             flash(f"Venta #{v.id} registrada por {filtro_cop(v.total)}.", "ok")
             return redirect(url_for("venta_detalle", id=v.id))
@@ -1128,6 +1151,7 @@ def venta_nueva():
     clis = Cliente.query.filter_by(activo=True).order_by(Cliente.nombre).all()
     met = ccalc.metricas(clis, ahora().date())
     clientes_data = [dict(id=c.id, nombre=c.nombre, tel=c.telefono or "", tipo=c.tipo or "",
+                          doc=c.identificacion or "",
                           bonif=met[c.id]["bonif_pend"], estado=met[c.id]["estado_txt"],
                           dias=met[c.id]["dias"], mes=met[c.id]["mes"], meta=c.meta_mensual or 0)
                      for c in clis]
@@ -1393,6 +1417,108 @@ def venta_anular(id):
 
 
 # ---------------------------------------------------------------- usuarios
+# ------------------------------------------------------- egresos / ajustes
+@app.route("/ajustes")
+@rol_requerido("admin", "produccion")
+def ajustes():
+    ini, fin, desde, hasta = periodo()
+    filas = (Ajuste.query.filter(Ajuste.fecha >= ini, Ajuste.fecha < fin)
+             .order_by(Ajuste.fecha.desc(), Ajuste.id.desc()).all())
+    por_motivo = defaultdict(float)
+    for a in filas:
+        if not a.anulada:
+            por_motivo[a.motivo] += a.total
+    return render_template("ajustes.html", filas=filas, desde=desde, hasta=hasta,
+                           total=sum(por_motivo.values()),
+                           por_motivo=sorted(por_motivo.items(), key=lambda x: -x[1]))
+
+
+@app.route("/ajustes/nuevo", methods=["GET", "POST"])
+@rol_requerido("admin", "produccion")
+def ajuste_nuevo():
+    if request.method == "POST":
+        f = request.form
+        motivo = f.get("motivo", "")
+        conteo = motivo == MOTIVOS_AJUSTE[0]
+        lineas, errores = [], []
+        for ref, c, u in zip(f.getlist("item[]"), f.getlist("cantidad[]"), f.getlist("unidad[]")):
+            if not ref or not str(c).strip():
+                continue
+            tipo, _, iid = ref.partition(":")
+            obj = db.session.get(Insumo if tipo == "i" else Producto, int(n(iid)))
+            if not obj:
+                continue
+            q = n(c)
+            if isinstance(obj, Insumo):
+                q = convertir(q, unidad_valida(u, obj.unidad), obj.unidad)
+            if conteo:
+                # Se escribió lo que se contó en bodega: sale la diferencia con el sistema.
+                dif = (obj.stock or 0) - q
+                if dif < -1e-9:
+                    u_txt = obj.unidad if isinstance(obj, Insumo) else "vikingos"
+                    errores.append(f"De «{obj.nombre}» se contaron {q:g} {u_txt} y el sistema tiene "
+                                   f"{(obj.stock or 0):g}. Si sobra, se registra como compra o inventario inicial.")
+                    continue
+                if dif <= 1e-9:
+                    continue
+                q = round(dif) if isinstance(obj, Producto) else dif
+            lineas.append((obj, q))
+        try:
+            if errores:
+                raise ErrorNegocio(errores)
+            if conteo and not lineas:
+                raise ErrorNegocio("El conteo coincide con el sistema: no hay nada que ajustar.")
+            a = registrar_ajuste(lineas, motivo, f.get("descripcion", ""), fecha_form(f.get("fecha")),
+                                 current_user.id)
+            db.session.commit()
+            flash(f"Egreso {a.numero} registrado por {filtro_cop(a.total)}. El inventario se actualizó.", "ok")
+            return redirect(url_for("ajuste_detalle", id=a.id))
+        except ErrorNegocio as e:
+            db.session.rollback()
+            for m in e.errores:
+                flash(m, "error")
+    items = [dict(ref=f"i:{i['id']}", nombre=i["nombre"], unidad=i["unidad"], stock=i["stock"],
+                  costo=i["costo"], grupo="Preparaciones" if i["prep"] else "Insumos")
+             for i in insumos_json()]
+    items += [dict(ref=f"p:{p.id}", nombre=p.nombre, unidad="unidad", stock=p.stock or 0,
+                   costo=p.costo_promedio or 0, grupo="Vikingos terminados")
+              for p in Producto.query.filter_by(activo=True).order_by(Producto.nombre)]
+    pre = ("i:" + request.args["insumo"]) if request.args.get("insumo") else (
+        ("p:" + request.args["producto"]) if request.args.get("producto") else "")
+    return render_template("ajuste_form.html", items=items, motivos=MOTIVOS_AJUSTE, pre=pre)
+
+
+@app.route("/ajustes/<int:id>")
+@rol_requerido("admin", "produccion")
+def ajuste_detalle(id):
+    a = db.session.get(Ajuste, id) or abort(404)
+    return render_template("ajuste_detalle.html", a=a)
+
+
+@app.route("/ajustes/<int:id>/documento.pdf")
+@rol_requerido("admin", "produccion")
+def ajuste_pdf(id):
+    a = db.session.get(Ajuste, id) or abort(404)
+    modo = "attachment" if request.args.get("descargar") else "inline"
+    return Response(comprobantes.egreso_pdf(a, DatosNegocio.actual()), mimetype="application/pdf",
+                    headers={"Content-Disposition": f'{modo}; filename="{a.numero}.pdf"'})
+
+
+@app.route("/ajustes/<int:id>/anular", methods=["POST"])
+@rol_requerido("admin")
+def ajuste_anular(id):
+    a = db.session.get(Ajuste, id) or abort(404)
+    try:
+        anular_ajuste(a)
+        db.session.commit()
+        flash(f"Egreso {a.numero} anulado. Las cantidades regresaron a la bodega.", "ok")
+    except ErrorNegocio as e:
+        db.session.rollback()
+        for m in e.errores:
+            flash(m, "error")
+    return redirect(url_for("ajuste_detalle", id=id))
+
+
 @app.route("/usuarios")
 @rol_requerido("admin")
 def usuarios():
@@ -1459,7 +1585,9 @@ def migrar_columnas():
               ("vk_receta", "unidad", "VARCHAR(30)"),
               ("vk_prep_receta", "unidad", "VARCHAR(30)"),
               ("vk_ventas", "cliente_id", "INTEGER"),
-              ("vk_venta_items", "bonificado", "BOOLEAN NOT NULL DEFAULT FALSE")]
+              ("vk_venta_items", "bonificado", "BOOLEAN NOT NULL DEFAULT FALSE"),
+              ("vk_clientes", "identificacion", "VARCHAR(40)"),
+              ("vk_ventas", "cliente_doc", "VARCHAR(40)")]
     insp = inspect(db.engine)
     for tabla, col, tipo in nuevas:
         if col not in {c["name"] for c in insp.get_columns(tabla)}:

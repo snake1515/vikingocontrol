@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Venta #{{ v.id }} {% if v.anulada %}<span class="badge err">Anulada</span>{% endif %}</h1>
-    <p>{{ v.fecha|fecha(True) }} · {{ v.metodo_pago }}{% if v.cliente_id %} · <a href="{{ url_for('cliente_detalle', id=v.cliente_id) }}">{{ v.cliente }}</a>{% elif v.cliente %} · {{ v.cliente }}{% endif %}{% if v.usuario %} · vendió {{ v.usuario.nombre }}{% endif %}</p></div>
+    <p>{{ v.fecha|fecha(True) }} · {{ v.metodo_pago }}{% if v.cliente_id %} · <a href="{{ url_for('cliente_detalle', id=v.cliente_id) }}">{{ v.cliente }}</a>{% elif v.cliente %} · {{ v.cliente }}{% endif %}{% if v.cliente_doc %} (C.C./NIT {{ v.cliente_doc }}){% endif %}{% if v.usuario %} · vendió {{ v.usuario.nombre }}{% endif %}</p></div>
   <div class="actions"><a class="btn sec" href="{{ url_for('ventas') }}">← Ventas</a><a class="btn" href="{{ url_for('venta_nueva') }}">＋ Nueva venta</a></div>
 </div>
 <div class="card" style="max-width:820px;margin-bottom:16px">
